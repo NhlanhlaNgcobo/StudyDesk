@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --primary: #4da6ff;
+    --border-radius: 12px;
+    --background: #ffffff;
+  }
+
+  .dark {
+    --background: #0f172a;
+    --primary: #4da6ff;
+  }
+
+  body {
+    @apply antialiased bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-50;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight font-black text-slate-900 dark:text-slate-50;
+  }
+
+  p {
+    @apply text-slate-600 dark:text-slate-400 leading-relaxed;
+  }
+
+  /* Selection highlight */
+  ::selection {
+    background-color: #4da6ff33;
+    color: inherit;
+  }
+
+  /* Improved placeholder visibility */
+  ::placeholder {
+    @apply text-slate-500 dark:text-slate-400 opacity-80;
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/* Utility classes */
+.rounded-base {
+  border-radius: var(--border-radius);
+}
+
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* KaTeX math rendering overrides */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0;
+}
