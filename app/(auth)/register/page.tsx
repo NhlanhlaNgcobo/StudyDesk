@@ -18,6 +18,8 @@ const registerSchema = z.object({
 type RegisterForm = z.infer<typeof registerSchema>;
 
 import { useRouter } from "next/navigation";
+import { auth } from "@/lib/firebase";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -49,10 +51,18 @@ export default function RegisterPage() {
   const strengthLabels = ["Weak", "Fair", "Good", "Strong"];
   const strengthColors = ["bg-red-400", "bg-yellow-400", "bg-blue-400", "bg-green-500"];
 
-  const onSubmit = (data: RegisterForm) => {
-    console.log("Register submitted:", data);
-    // Mock register redirect
-    router.push("/role-select");
+  const [authError, setAuthError] = useState("");
+
+  const onSubmit = async (data: RegisterForm) => {
+    setAuthError("");
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      await updateProfile(userCredential.user, { displayName: data.name });
+      router.push("/role-select");
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      setAuthError(error.message || "Failed to create account");
+    }
   };
 
   return (
@@ -144,6 +154,7 @@ export default function RegisterPage() {
             {errors.password && <p className="text-xs text-red-500 font-bold px-1 mt-1">{errors.password.message}</p>}
           </div>
 
+            {authError && <p className="text-sm text-red-500 font-bold px-1 text-center bg-red-50 p-2 rounded-md">{authError}</p>}
           <button
             type="submit"
             disabled={isSubmitting}

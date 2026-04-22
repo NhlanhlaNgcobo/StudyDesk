@@ -8,6 +8,9 @@ import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { GraduationCap, Landmark, BookOpen, Calendar, ArrowRight, ArrowLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { auth, db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 const universities = ["UCT", "Wits", "UKZN", "UP", "SU", "UJ", "NWU", "RU", "UWC", "UL", "MUT", "DUT", "CPUT", "TUT", "VUT", "UFH", "WSU", "UNIVEN", "SMU", "UZ"];
 
@@ -22,6 +25,8 @@ type OnboardingForm = z.infer<typeof studentOnboardingSchema>;
 
 export default function StudentOnboardingPage() {
   const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
   const {
     register,
     handleSubmit,
@@ -39,8 +44,28 @@ export default function StudentOnboardingPage() {
 
   const filteredUnivs = universities.filter(u => u.toLowerCase().includes(query.toLowerCase()));
 
-  const onSubmit = (data: OnboardingForm) => {
-    console.log("Student onboarding submitted:", data);
+  const onSubmit = async (data: OnboardingForm) => {
+    if (!auth.currentUser) {
+      console.error("No authenticated user found");
+      return;
+    }
+    setLoading(true);
+    try {
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      await setDoc(userRef, {
+        role: "student",
+        university: data.university,
+        degree: data.degree,
+        year: data.year,
+        fullName: data.fullName,
+        onboardingComplete: true,
+      }, { merge: true });
+      router.push("/student/ai-tutor");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const nextStep = () => setStep(s => Math.min(s + 1, 3));
@@ -223,9 +248,10 @@ export default function StudentOnboardingPage() {
             ) : (
                 <button
                     type="submit"
-                    className="flex-[2] py-4 bg-primary text-white font-black text-lg rounded-base flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/20 active:scale-95 transition-all text-xl"
+                    disabled={loading}
+                    className="flex-[2] py-4 bg-primary text-white font-black text-lg rounded-base flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/20 active:scale-95 transition-all text-xl disabled:opacity-70"
                 >
-                    Enter My Desk <ArrowRight size={20} />
+                    {loading ? "Preparing Desk..." : "Enter My Desk"} <ArrowRight size={20} />
                 </button>
             )}
           </div>

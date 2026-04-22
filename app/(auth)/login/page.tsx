@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -17,6 +17,9 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 import { useRouter } from "next/navigation";
+import { auth, db } from "@/lib/firebase";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,10 +31,35 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  const onSubmit = (data: LoginForm) => {
-    console.log("Login submitted:", data);
-    // Mock login redirect
-    router.push("/student/dashboard");
+  const [authError, setAuthError] = useState("");
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const role = snap.data()?.role;
+        if (role === "tutor") router.replace("/tutor/dashboard");
+        else if (role === "student") router.replace("/student/dashboard");
+        else router.replace("/role-select");
+      }
+    });
+    return () => unsub();
+  }, [router]);
+
+  const onSubmit = async (data: LoginForm) => {
+    setAuthError("");
+    try {
+      const cred = await signInWithEmailAndPassword(auth, data.email, data.password);
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      const role = snap.data()?.role;
+      if (role === "tutor") router.push("/tutor/dashboard");
+      else if (role === "student") router.push("/student/dashboard");
+      else router.push("/role-select");
+    } catch (error: any) {
+      console.error("Login error:", error);
+      setAuthError("Invalid email or password. Please try again.");
+    }
   };
 
   return (
@@ -90,6 +118,7 @@ export default function LoginPage() {
             {errors.password && <p className="text-xs text-red-500 font-bold px-1">{errors.password.message}</p>}
           </div>
 
+            {authError && <p className="text-sm text-red-500 font-bold px-1 text-center bg-red-50 p-2 rounded-md">{authError}</p>}
           <button
             type="submit"
             disabled={isSubmitting}

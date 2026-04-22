@@ -1,6 +1,6 @@
 /**
  * StudyDesk — Claude AI Integration
- * Brain: Claude Sonnet 4 (standard) | Claude Opus 4 (premium + STEM)
+ * Brain: Claude 3.5 Sonnet (standard) | Claude 3 Opus (premium + STEM)
  */
 
 export type UserTier = "free" | "basic" | "premium" | "elite";
@@ -31,11 +31,17 @@ const STEM_SUBJECTS = [
   "data science",
 ];
 
+// Updated to valid current Anthropic model identifiers
+const MODELS = {
+  sonnet: "claude-3-5-sonnet-20241022",
+  opus: "claude-3-opus-20240229",
+};
+
 /**
  * Determine which Claude model to use based on user tier and subject.
- * - Premium / Elite users always get Opus 4
- * - STEM subjects for any paid tier get Opus 4
- * - Everyone else gets Sonnet 4
+ * - Premium / Elite users always get Opus 3
+ * - STEM subjects for any paid tier get Opus 3
+ * - Everyone else gets Sonnet 3.5
  */
 export function selectModel(options: ClaudeOptions): string {
   const { userTier = "free", subject = "" } = options;
@@ -45,9 +51,9 @@ export function selectModel(options: ClaudeOptions): string {
   );
 
   if (isPremium || (userTier === "basic" && isSTEM)) {
-    return "claude-opus-4-5";
+    return MODELS.opus;
   }
-  return "claude-sonnet-4-5";
+  return MODELS.sonnet;
 }
 
 /**

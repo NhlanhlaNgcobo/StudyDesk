@@ -349,7 +349,7 @@ export default function LandingPage() {
             <h4 className="font-bold uppercase tracking-widest text-sm">Product</h4>
             <ul className="space-y-4 text-slate-600 dark:text-slate-400 font-medium">
               <li><Link href="#features" className="hover:text-primary transition-colors text-sm">Features</Link></li>
-              <li><Link href="#pricing" className="hover:text-primary transition-colors text-sm">Pricing</Link></li>
+              <li><Link href="/pricing" className="hover:text-primary transition-colors text-sm">Pricing</Link></li>
               <li><Link href="#" className="hover:text-primary transition-colors text-sm">AI Engine</Link></li>
             </ul>
           </div>
@@ -366,9 +366,9 @@ export default function LandingPage() {
           <div className="space-y-6">
             <h4 className="font-bold uppercase tracking-widest text-sm">Legal</h4>
             <ul className="space-y-4 text-slate-600 dark:text-slate-400 font-medium">
-              <li><Link href="#" className="hover:text-primary transition-colors text-sm">Privacy</Link></li>
-              <li><Link href="#" className="hover:text-primary transition-colors text-sm">Terms</Link></li>
-              <li><Link href="#" className="hover:text-primary transition-colors text-sm">Security</Link></li>
+              <li><Link href="/privacy" className="hover:text-primary transition-colors text-sm">Privacy</Link></li>
+              <li><Link href="/terms" className="hover:text-primary transition-colors text-sm">Terms</Link></li>
+              <li><Link href="/popia" className="hover:text-primary transition-colors text-sm">POPIA</Link></li>
             </ul>
           </div>
         </div>

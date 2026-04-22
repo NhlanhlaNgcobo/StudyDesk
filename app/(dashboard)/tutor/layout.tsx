@@ -20,6 +20,8 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/auth-provider";
+import { AuthGuard } from "@/components/auth-guard";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/tutor/dashboard" },
@@ -34,10 +36,17 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { profile, logout } = useAuth();
+
+  const initials = profile?.displayName
+    ? profile.displayName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+    : "?";
+  const displayName = profile?.displayName || profile?.email || "Tutor";
 
   const activeLabel = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label || "Dashboard";
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex font-inter selection:bg-emerald-100 selection:text-emerald-700">
       {/* Sidebar - Desktop */}
       <aside 
@@ -68,13 +77,13 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         {/* User Profile Info */}
         <div className={cn("px-6 py-8 flex flex-col items-center gap-4", collapsed ? "items-center" : "items-start")}>
             <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 font-black flex items-center justify-center rounded-full text-lg border-2 border-white dark:border-slate-800 shadow-sm relative">
-                TA
+                {initials}
                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full" />
             </div>
             {!collapsed && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="flex items-center gap-2">
-                         <p className="font-black text-sm text-text-primary">Tutor Adams</p>
+                         <p className="font-black text-sm text-text-primary">{displayName}</p>
                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[8px] font-black uppercase tracking-widest leading-none">Tutor</span>
                     </div>
                     <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">Official Educator</p>
@@ -113,11 +122,11 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         
         <div className="p-6 border-t mt-auto">
              {!collapsed ? (
-                <button className="w-full py-3 bg-slate-900 dark:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all">
+                <button onClick={logout} className="w-full py-3 bg-slate-900 dark:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all">
                     <LogOut size={14} /> Power Down
                 </button>
              ) : (
-                <button className="w-full flex justify-center text-slate-400 hover:text-emerald-500 transition-colors"><LogOut size={20}/></button>
+                <button onClick={logout} className="w-full flex justify-center text-slate-400 hover:text-emerald-500 transition-colors"><LogOut size={20}/></button>
              )}
         </div>
       </aside>
@@ -168,5 +177,6 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         </main>
       </div>
     </div>
+    </AuthGuard>
   );
 }

@@ -8,6 +8,9 @@ import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
 import { Presentation, Landmark, User, Hash, ArrowRight, ArrowLeft, X, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { auth, db } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 const tutorOnboardingSchema = z.object({
   fullName: z.string().min(2, "Full name required"),
@@ -22,6 +25,8 @@ export default function TutorOnboardingPage() {
   const [step, setStep] = useState(1);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
   const {
     register,
     handleSubmit,
@@ -52,8 +57,28 @@ export default function TutorOnboardingPage() {
 
   const removeTag = (t: string) => setTags(tags.filter(tag => tag !== t));
 
-  const onSubmit = (data: OnboardingForm) => {
-    console.log("Tutor onboarding submitted:", data);
+  const onSubmit = async (data: OnboardingForm) => {
+    if (!auth.currentUser) {
+      console.error("No authenticated user found");
+      return;
+    }
+    setLoading(true);
+    try {
+      const userRef = doc(db, "users", auth.currentUser.uid);
+      await setDoc(userRef, {
+        role: "tutor",
+        university: data.university,
+        subjects: data.subjects,
+        bio: data.bio,
+        fullName: data.fullName,
+        onboardingComplete: true,
+      }, { merge: true });
+      router.push("/tutor/dashboard");
+    } catch (error) {
+      console.error("Error updating profile:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const nextStep = () => setStep(s => Math.min(s + 1, 3));
@@ -226,9 +251,10 @@ export default function TutorOnboardingPage() {
             ) : (
                 <button
                     type="submit"
-                    className="flex-[2] py-4 bg-primary text-white font-black text-xl rounded-base flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all group"
+                    disabled={loading}
+                    className="flex-[2] py-4 bg-primary text-white font-black text-xl rounded-base flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all group disabled:opacity-70"
                 >
-                    Launch My Workspace <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
+                    {loading ? "Launching..." : "Launch My Workspace"} <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
                 </button>
             )}
           </div>
