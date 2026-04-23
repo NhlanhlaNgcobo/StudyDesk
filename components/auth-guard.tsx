@@ -14,6 +14,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
+    // Bypass for demo mode
+    if (typeof window !== "undefined" && localStorage.getItem("studydesk_demo_active") === "true") {
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
         // Not logged in — redirect to login with a return path

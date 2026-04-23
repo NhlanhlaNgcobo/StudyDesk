@@ -87,7 +87,14 @@ interface GeneratedQuiz {
   createdAt: any;
 }
 
-const TABS = ["Materials", "Notes", "Quizzes"];
+interface GeneratedExam {
+  id: string;
+  topic: string;
+  questions: any[];
+  createdAt: any;
+}
+
+const TABS = ["Materials", "Notes", "Quizzes", "Exams"];
 
 // ─── Breadcrumbs ─────────────────────────────────────────────────────────────
 
@@ -113,6 +120,7 @@ export default function ModuleDetailPage() {
   const [files, setFiles] = useState<StudyFile[]>([]);
   const [notes, setNotes] = useState<GeneratedNote[]>([]);
   const [quizzes, setQuizzes] = useState<GeneratedQuiz[]>([]);
+  const [exams, setExams] = useState<GeneratedExam[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [generating, setGenerating] = useState<string | null>(null);
@@ -186,6 +194,18 @@ export default function ModuleDetailPage() {
     );
     return onSnapshot(q, (snap) => {
       setQuizzes(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GeneratedQuiz)));
+    });
+  }, [moduleId]);
+
+  // ── Load exams ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!moduleId) return;
+    const q = query(
+      collection(db, "modules", moduleId, "exams"),
+      orderBy("createdAt", "desc")
+    );
+    return onSnapshot(q, (snap) => {
+      setExams(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GeneratedExam)));
     });
   }, [moduleId]);
 
@@ -334,6 +354,48 @@ export default function ModuleDetailPage() {
       setActiveTab("Quizzes");
     } catch (e: any) {
       setGenerateError(e.message || "Quiz generation failed");
+    } finally {
+      setGenerating(null);
+      setShowGenModal(null);
+    }
+  };
+
+  // ── Generate Exam ───────────────────────────────────────────────────────
+  const generateExam = async () => {
+    if (!genTopic.trim() || !module) return;
+    setGenerating("exam");
+    setGenerateError(null);
+
+    try {
+      const res = await fetch("/api/generate/content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: genTopic,
+          subject: module.subject,
+          type: "exam",
+          userTier,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Exam generation failed");
+
+      const data = json.data;
+
+      if (!Array.isArray(data)) {
+        throw new Error("Invalid output received from AI");
+      }
+
+      await addDoc(collection(db, "modules", moduleId, "exams"), {
+        topic: genTopic,
+        questions: data,
+        createdAt: serverTimestamp(),
+      });
+
+      setActiveTab("Exams");
+    } catch (e: any) {
+      setGenerateError(e.message || "Exam generation failed");
     } finally {
       setGenerating(null);
       setShowGenModal(null);
@@ -688,6 +750,62 @@ export default function ModuleDetailPage() {
             )}
           </motion.div>
         )}
+
+      {/* EXAMS TAB */}
+        {activeTab === "Exams" && (
+          <motion.div
+            key="exams"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            {exams.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
+                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
+                  <Timer size={60} className="text-slate-200" />
+                </div>
+                <h2 className="text-2xl font-bold">No exams generated yet</h2>
+                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Mock Exam.</p>
+                <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
+                  Generate Exam
+                </button>
+              </div>
+            ) : (
+              exams.map((exam) => (
+                <div key={exam.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-lg hover:border-primary/30 transition-all group">
+                  <div className="p-6 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-primary/10 rounded-base flex items-center justify-center">
+                        <Timer size={24} className="text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors">
+                          {exam.topic}
+                        </h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            {exam.questions?.length || 0} questions
+                          </span>
+                          <span className="w-1 h-1 bg-slate-300 rounded-full" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                            Mock Exam
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Link
+                      href={`/student/exams/${exam.id}?moduleId=${moduleId}`}
+                      className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center gap-2 hover:shadow-lg hover:shadow-primary/30 transition-all"
+                    >
+                      <Play size={14} fill="currentColor" /> Take Exam
+                    </Link>
+                  </div>
+                </div>
+              ))
+            )}
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* ── Generation Modals ─────────────────────────────────────────────── */}
@@ -779,7 +897,7 @@ export default function ModuleDetailPage() {
               )}
 
               <button
-                onClick={showGenModal === "notes" ? generateNotes : generateQuiz}
+                onClick={showGenModal === "notes" ? generateNotes : showGenModal === "exam" ? generateExam : generateQuiz}
                 disabled={!!generating || !genTopic.trim()}
                 className="w-full py-4 bg-primary text-white font-black uppercase tracking-widest rounded-base flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-xl hover:shadow-primary/30 transition-all"
               >

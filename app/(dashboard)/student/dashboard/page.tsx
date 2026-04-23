@@ -19,6 +19,7 @@ import {
   X,
   PlusCircle
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { 
   BarChart, 
   Bar, 
@@ -75,7 +76,7 @@ const MetricCard = ({ label, value, icon: Icon, color, bg }: any) => (
       <Icon size={28} />
     </div>
     <div>
-      <h3 className="text-3xl font-bold text-text-primary mb-1 tracking-tight">{value}</h3>
+      <h3 className="text-3xl font-bold text-slate-900 dark:text-white mb-1 tracking-tight">{value}</h3>
       <p className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">{label}</p>
     </div>
   </motion.div>
@@ -93,8 +94,8 @@ const ModuleCard = ({ id, name, tags, fileCount, progress, color }: any) => (
     </div>
     
     <div>
-      <h3 className="text-xl font-extrabold mb-2 tracking-tight group-hover:text-primary transition-colors">{name}</h3>
-      <p className="text-sm font-bold text-text-secondary">{fileCount} Study Files Attached</p>
+      <h3 className="text-xl font-extrabold mb-2 tracking-tight group-hover:text-primary transition-colors text-slate-900 dark:text-white">{name}</h3>
+      <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{fileCount} Study Files Attached</p>
     </div>
 
     <div className="space-y-3">
@@ -126,6 +127,8 @@ export default function StudentDashboard() {
   const [selectedColor, setSelectedColor] = useState("#4DA6FF");
   const [generating, setGenerating] = useState<string | null>(null);
 
+  const { profile } = useAuth();
+  const firstName = profile?.displayName ? profile.displayName.split(" ")[0] : "Student";
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -145,7 +148,7 @@ export default function StudentDashboard() {
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight italic decoration-primary decoration-4 underline">
-             {greeting}, Nhlanhla
+             {greeting}, {firstName}
           </h1>
           <div className="flex items-center gap-4 mt-3 text-slate-600 dark:text-slate-300 font-bold">
              <Calendar size={18} className="text-primary" />
@@ -182,27 +185,27 @@ export default function StudentDashboard() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                    <button
                      onClick={() => handleQuickAction("/student/notes", "notes")}
-                     className="p-8 bg-blue-100/50 dark:bg-blue-900/10 border-2 border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-blue-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                     className="p-8 bg-blue-100/30 dark:bg-blue-950/20 border-2 border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-all active:scale-95 shadow-sm relative overflow-hidden"
                    >
-                     {generating === "notes" && <div className="absolute inset-0 flex items-center justify-center bg-blue-50/80"><span className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>}
-                     <div className="w-14 h-14 bg-white dark:bg-slate-900 text-blue-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><FileText size={28} /></div>
-                     <span className="font-extrabold text-blue-600 tracking-tight">Generate Notes</span>
+                     {generating === "notes" && <div className="absolute inset-0 flex items-center justify-center bg-blue-100/80 dark:bg-blue-950/80 z-20"><span className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>}
+                     <div className="w-14 h-14 bg-white dark:bg-slate-800 text-blue-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative z-10"><FileText size={28} /></div>
+                     <span className="font-extrabold text-blue-600 dark:text-blue-400 tracking-tight relative z-10">Generate Notes</span>
                    </button>
                    <button
                      onClick={() => handleQuickAction("/student/quiz", "quiz")}
-                     className="p-8 bg-purple-100/50 dark:bg-purple-900/10 border-2 border-purple-100 dark:border-purple-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-purple-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                     className="p-8 bg-purple-100/30 dark:bg-purple-950/20 border-2 border-purple-100 dark:border-purple-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-all active:scale-95 shadow-sm relative overflow-hidden"
                    >
-                     {generating === "quiz" && <div className="absolute inset-0 flex items-center justify-center bg-purple-50/80"><span className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>}
-                     <div className="w-14 h-14 bg-white dark:bg-slate-900 text-purple-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Brain size={28} /></div>
-                     <span className="font-extrabold text-purple-600 tracking-tight">Practice Quiz</span>
+                     {generating === "quiz" && <div className="absolute inset-0 flex items-center justify-center bg-purple-100/80 dark:bg-purple-950/80 z-20"><span className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>}
+                     <div className="w-14 h-14 bg-white dark:bg-slate-800 text-purple-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative z-10"><Brain size={28} /></div>
+                     <span className="font-extrabold text-purple-600 dark:text-purple-400 tracking-tight relative z-10">Practice Quiz</span>
                    </button>
                    <button
                      onClick={() => handleQuickAction("/student/exams", "exams")}
-                     className="p-8 bg-emerald-100/50 dark:bg-emerald-900/10 border-2 border-emerald-100 dark:border-emerald-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-emerald-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                     className="p-8 bg-emerald-100/30 dark:bg-emerald-950/20 border-2 border-emerald-100 dark:border-emerald-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-all active:scale-95 shadow-sm relative overflow-hidden"
                    >
-                     {generating === "exams" && <div className="absolute inset-0 flex items-center justify-center bg-emerald-50/80"><span className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>}
-                     <div className="w-14 h-14 bg-white dark:bg-slate-900 text-emerald-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Zap size={28} /></div>
-                     <span className="font-extrabold text-emerald-600 tracking-tight text-balance">Launch Mock Exam</span>
+                     {generating === "exams" && <div className="absolute inset-0 flex items-center justify-center bg-emerald-100/80 dark:bg-emerald-950/80 z-20"><span className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>}
+                     <div className="w-14 h-14 bg-white dark:bg-slate-800 text-emerald-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative z-10"><Zap size={28} /></div>
+                     <span className="font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight text-balance relative z-10">Launch Mock Exam</span>
                    </button>
                 </div>
             </section>
@@ -222,7 +225,7 @@ export default function StudentDashboard() {
             <section className="space-y-6">
                 <div className="flex justify-between items-center px-1">
                     <h2 className="text-2xl font-black tracking-tight">Weekly Activity</h2>
-                    <div className="flex items-center gap-2 text-emerald-500 font-bold text-sm bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-widest leading-none">
+                    <div className="flex items-center gap-2 text-emerald-500 font-bold text-sm bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1 rounded-full uppercase tracking-widest leading-none">
                         <TrendingUp size={14} /> +12% vs Last Week
                     </div>
                 </div>
@@ -326,7 +329,7 @@ export default function StudentDashboard() {
               </div>
               <div className="space-y-6">
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Module Name / Code</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Module Name / Code</label>
                   <input
                     type="text"
                     value={moduleName}
@@ -336,7 +339,7 @@ export default function StudentDashboard() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Subject Area</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Subject Area</label>
                   <select
                     value={selectedSubject}
                     onChange={(e) => setSelectedSubject(e.target.value)}
@@ -346,7 +349,7 @@ export default function StudentDashboard() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Colour Accent</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">Colour Accent</label>
                   <div className="flex gap-3">
                     {COLORS.map((c) => (
                       <button

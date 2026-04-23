@@ -23,38 +23,83 @@ import { InlineMath, BlockMath } from "react-katex";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
 
-// --- Mock Data: Physics Exam (20 questions) ---
+import { useParams, useSearchParams } from "next/navigation";
+import { db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
-const EXAM_DATA = {
-  id: "e1",
-  title: "PHY101: Introduction to Mechanics",
-  totalQuestions: 20,
-  timeLimit: 60 * 60, // 60 minutes
-  sections: ["Kinematics", "Newton's Laws", "Energy & Momentum"],
-  questions: Array.from({ length: 20 }).map((_, i) => ({
-    id: `q${i+1}`,
-    section: i < 7 ? "Kinematics" : i < 14 ? "Newton's Laws" : "Energy & Momentum",
-    type: i % 5 === 0 ? "short" : "mcq",
-    text: i === 0 ? "A particle's position is given by $x(t) = 3t^2 + 2t + 5$. Calculate the instantaneous velocity at $t = 2$s." : 
-          i === 5 ? "State the formula for the work-energy theorem involving kinetic energy change $\Delta K$." :
-          `Physics Problem ${i+1}: Identify the fundamental principle involved in a system where $\sum \vec{F} = 0$.`,
-    options: ["Inertia", "Acceleration", "Momentum", "Equilibrium"],
-    correctIndex: 3,
-    explanation: "When the net force is zero, the system is in static or dynamic equilibrium."
-  }))
-};
+interface ExamQuestion {
+  id: string;
+  text: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  topic: string;
+}
+
+interface ExamData {
+  id: string;
+  title: string;
+  totalQuestions: number;
+  timeLimit: number;
+  sections: string[];
+  questions: ExamQuestion[];
+}
 
 export default function MockExamPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const examId = params.id as string;
+  const moduleId = searchParams.get("moduleId");
+
+  const [exam, setExam] = useState<ExamData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string | number>>({});
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
-  const [timeLeft, setTimeLeft] = useState(EXAM_DATA.timeLimit);
+  const [timeLeft, setTimeLeft] = useState(60 * 60);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<"mcq" | "short">("mcq");
+
+  // ── Load exam from Firestore ────────────────────────────────────────────
+  useEffect(() => {
+    async function load() {
+      try {
+        if (moduleId) {
+          const snap = await getDoc(doc(db, "modules", moduleId, "exams", examId));
+          if (snap.exists()) {
+            const data = snap.data();
+            const questions = data.questions || [];
+            const sections = Array.from(new Set(questions.map((q: any) => q.topic))).filter(Boolean) as string[];
+
+            const examData: ExamData = {
+              id: snap.id,
+              title: data.topic,
+              totalQuestions: questions.length,
+              timeLimit: questions.length * 2 * 60, // 2 mins per question
+              sections: sections.length > 0 ? sections : ["General"],
+              questions: questions,
+            };
+            setExam(examData);
+            setTimeLeft(examData.timeLimit);
+          } else {
+            setError("Exam not found.");
+          }
+        } else {
+          setError("Exam not found.");
+        }
+      } catch (e: any) {
+        setError(e.message || "Failed to load exam.");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [examId, moduleId]);
 
   useEffect(() => {
-    if (isSubmitted) return;
+    if (isSubmitted || !exam) return;
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 0) {
@@ -75,17 +120,40 @@ export default function MockExamPage() {
         clearInterval(timer);
         window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [isSubmitted]);
+  }, [isSubmitted, exam]);
 
   const handleSubmit = () => {
     setIsSubmitted(true);
     setShowConfirm(false);
   };
 
-  const handleNext = () => setCurrentIndex(prev => Math.min(prev + 1, EXAM_DATA.totalQuestions - 1));
+  const handleNext = () => {
+    if (exam) {
+        setCurrentIndex(prev => Math.min(prev + 1, exam.totalQuestions - 1));
+    }
+  };
   const handlePrev = () => setCurrentIndex(prev => Math.max(prev - 1, 0));
 
-  const currentQuestion = EXAM_DATA.questions[currentIndex];
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (error || !exam) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-6">
+        <p className="text-red-500 font-bold text-xl">{error || "Exam not found"}</p>
+        <Link href={`/student/modules/${moduleId || ""}`} className="px-6 py-3 bg-primary text-white font-black rounded-base">
+          Back to Modules
+        </Link>
+      </div>
+    );
+  }
+
+  const currentQuestion = exam.questions[currentIndex];
   const isAnswered = answers[currentQuestion.id] !== undefined && answers[currentQuestion.id] !== "";
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -96,6 +164,13 @@ export default function MockExamPage() {
 
   const timerColor = timeLeft < 300 ? "text-red-500 bg-red-50" : timeLeft < 600 ? "text-amber-500 bg-amber-50" : "text-text-secondary bg-slate-100";
 
+  const score = Object.keys(answers).filter(qId => {
+      const q = exam.questions.find(x => x.id === qId);
+      return q && answers[qId] === q.correctIndex;
+  }).length;
+  const accuracy = Math.round((score / exam.totalQuestions) * 100);
+  const timeTaken = exam.timeLimit - timeLeft;
+  
   if (isSubmitted) {
      return (
         <div className="max-w-6xl mx-auto py-20 px-6 animate-in fade-in zoom-in duration-700">
@@ -103,47 +178,52 @@ export default function MockExamPage() {
                 <div className="inline-flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-full font-black uppercase tracking-widest text-sm shadow-xl shadow-primary/20">
                     <Award size={20} /> Exam Finalized
                 </div>
-                <h1 className="text-6xl font-black italic tracking-tighter underline decoration-primary decoration-8 uppercase">{EXAM_DATA.title}</h1>
+                <h1 className="text-6xl font-black italic tracking-tighter underline decoration-primary decoration-8 uppercase">{exam.title}</h1>
                 <p className="text-2xl text-text-secondary font-bold">Your Performance Report Card</p>
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 mb-20">
                 <div className="bg-white p-12 rounded-xl shadow-2xl border border-slate-100 flex flex-col items-center justify-center text-center space-y-6">
                     <p className="text-sm font-black uppercase tracking-widest text-text-secondary">Grade Estimate</p>
-                    <div className="text-9xl font-black text-primary italic">A+</div>
-                    <div className="px-6 py-2 bg-emerald-100 text-emerald-600 rounded-full font-black uppercase text-xs">Exemplary</div>
+                    <div className={cn("text-9xl font-black italic", accuracy >= 80 ? "text-primary" : accuracy >= 50 ? "text-amber-500" : "text-red-500")}>
+                        {accuracy >= 80 ? "A+" : accuracy >= 70 ? "B" : accuracy >= 60 ? "C" : accuracy >= 50 ? "D" : "F"}
+                    </div>
                 </div>
 
                 <div className="lg:col-span-3 bg-white p-10 rounded-xl border border-slate-100 shadow-sm space-y-10">
                     <div className="grid grid-cols-3 gap-8 text-center border-b pb-10">
                         <div className="space-y-2">
                              <p className="text-xs font-black uppercase tracking-widest text-text-secondary">Raw Score</p>
-                             <p className="text-4xl font-black italic">18 / 20</p>
+                             <p className="text-4xl font-black italic">{score} / {exam.totalQuestions}</p>
                         </div>
                         <div className="space-y-2">
                              <p className="text-xs font-black uppercase tracking-widest text-text-secondary">Time Taken</p>
-                             <p className="text-4xl font-black italic">42m 18s</p>
+                             <p className="text-4xl font-black italic">{formatTime(timeTaken)}</p>
                         </div>
                         <div className="space-y-2">
                              <p className="text-xs font-black uppercase tracking-widest text-text-secondary">Accuracy</p>
-                             <p className="text-4xl font-black italic text-emerald-500">90%</p>
+                             <p className={cn("text-4xl font-black italic", accuracy >= 50 ? "text-emerald-500" : "text-red-500")}>{accuracy}%</p>
                         </div>
                     </div>
 
                     <div className="space-y-6">
                         <h3 className="text-xl font-black uppercase italic tracking-tight">Section Mastery</h3>
                         <div className="space-y-4">
-                            {EXAM_DATA.sections.map(s => (
+                            {exam.sections.map(s => {
+                                const sectionQs = exam.questions.filter(q => q.topic === s);
+                                const sectionScore = sectionQs.filter(q => answers[q.id] === q.correctIndex).length;
+                                const sectionAcc = Math.round((sectionScore / (sectionQs.length || 1)) * 100);
+                                return (
                                 <div key={s} className="space-y-2">
                                     <div className="flex justify-between items-center px-1">
                                         <span className="text-sm font-black uppercase tracking-widest text-text-secondary">{s}</span>
-                                        <span className="text-sm font-black text-primary">85%</span>
+                                        <span className="text-sm font-black text-primary">{sectionAcc}%</span>
                                     </div>
                                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                                        <div className="h-full bg-primary" style={{ width: "85%" }} />
+                                        <div className="h-full bg-primary" style={{ width: `${sectionAcc}%` }} />
                                     </div>
                                 </div>
-                            ))}
+                            )})}
                         </div>
                     </div>
                 </div>
@@ -169,13 +249,13 @@ export default function MockExamPage() {
       {/* Fixed Top Bar */}
       <header className="fixed top-0 left-0 right-0 h-20 bg-slate-900 text-white z-50 flex items-center justify-between px-10 shadow-2xl">
           <div className="flex items-center gap-8">
-              <h1 className="font-black italic text-xl tracking-tighter uppercase border-r border-slate-700 pr-8">{EXAM_DATA.title}</h1>
+              <h1 className="font-black italic text-xl tracking-tighter uppercase border-r border-slate-700 pr-8">{exam.title}</h1>
               <div className="flex items-center gap-4">
                 <div className={cn("px-6 py-2 rounded-full font-black flex items-center gap-3 text-lg border-2 border-transparent transition-all", timerColor)}>
                     <Clock size={20} /> {formatTime(timeLeft)}
                 </div>
                 <div className="text-xs font-black uppercase tracking-widest text-slate-400">
-                    <span className="text-white text-lg pr-1 font-black">{currentIndex + 1}</span> / {EXAM_DATA.totalQuestions} Questions
+                    <span className="text-white text-lg pr-1 font-black">{currentIndex + 1}</span> / {exam.totalQuestions} Questions
                 </div>
               </div>
           </div>
@@ -198,7 +278,7 @@ export default function MockExamPage() {
                   <div className="flex justify-between items-start">
                     <div className="space-y-4 flex-1">
                         <div className="flex items-center gap-4">
-                            <span className="px-4 py-1 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-full">Section: {currentQuestion.section}</span>
+                            <span className="px-4 py-1 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-full">Section: {currentQuestion.topic}</span>
                              <button 
                                 onClick={() => setFlagged(prev => ({ ...prev, [currentQuestion.id]: !prev[currentQuestion.id] }))}
                                 className={cn(
@@ -219,20 +299,9 @@ export default function MockExamPage() {
                   </div>
 
                   {/* Input Selector (MCQ / Short Answer Tab for some) */}
-                  {currentQuestion.type === "short" ? (
-                      <div className="space-y-6 pt-10">
-                         <p className="text-xs font-black uppercase tracking-widest text-slate-400">Your Response (Type Answer Below)</p>
-                         <textarea 
-                            value={answers[currentQuestion.id] as string || ""}
-                            onChange={(e) => setAnswers(prev => ({ ...prev, [currentQuestion.id]: e.target.value }))}
-                            className="w-full p-8 bg-slate-50 border-2 border-transparent focus:border-primary rounded-xl outline-none font-medium text-lg min-h-48 resize-none shadow-inner"
-                            placeholder="State your answer clearly..."
-                         />
-                      </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 pt-10">
-                         {currentQuestion.options.map((option, idx) => (
-                             <button 
+                  <div className="grid grid-cols-1 gap-4 pt-10">
+                          {currentQuestion.options.map((option, idx) => (
+                              <button 
                                 key={idx}
                                 onClick={() => setAnswers(prev => ({ ...prev, [currentQuestion.id]: idx }))}
                                 className={cn(
@@ -241,7 +310,7 @@ export default function MockExamPage() {
                                         ? "bg-primary border-primary text-white shadow-xl shadow-primary/20 scale-[1.02]" 
                                         : "bg-white border-slate-100 hover:border-primary hover:bg-primary/5 hover:scale-[1.01]"
                                 )}
-                             >
+                              >
                                 <div className={cn(
                                     "w-8 h-8 rounded-full border-2 flex items-center justify-center font-black",
                                     answers[currentQuestion.id] === idx ? "border-white bg-white/20" : "border-slate-100 group-hover:border-primary"
@@ -249,10 +318,9 @@ export default function MockExamPage() {
                                     {String.fromCharCode(65 + idx)}
                                 </div>
                                 <span className="text-lg tracking-tight">{option}</span>
-                             </button>
-                         ))}
-                    </div>
-                  )}
+                              </button>
+                          ))}
+                  </div>
 
                   <div className="flex justify-between pt-12 mt-auto border-t border-slate-50">
                      <button 
@@ -264,7 +332,7 @@ export default function MockExamPage() {
                      </button>
                      <button 
                         onClick={handleNext}
-                        disabled={currentIndex === EXAM_DATA.totalQuestions - 1}
+                        disabled={currentIndex === exam.totalQuestions - 1}
                         className="px-12 py-4 bg-slate-900 text-white font-black uppercase text-sm tracking-widest rounded-base hover:bg-primary transition-all flex items-center gap-3 shadow-lg"
                      >
                         Next <ChevronRight size={20} />
@@ -282,7 +350,7 @@ export default function MockExamPage() {
                   </div>
 
                   <div className="grid grid-cols-5 gap-3">
-                      {EXAM_DATA.questions.map((q, i) => {
+                      {exam.questions.map((q, i) => {
                           const isCur = i === currentIndex;
                           const isAns = answers[q.id] !== undefined && answers[q.id] !== "";
                           const isFlag = flagged[q.id];
@@ -321,7 +389,7 @@ export default function MockExamPage() {
                           </div>
                            <div className="flex items-center gap-3 text-slate-300 italic">
                                <div className="w-3 h-3 rounded-full bg-slate-100" />
-                               <span className="text-sm font-bold">{EXAM_DATA.totalQuestions - Object.keys(answers).length} Remaining</span>
+                               <span className="text-sm font-bold">{exam.totalQuestions - Object.keys(answers).length} Remaining</span>
                           </div>
                       </div>
                   </div>
@@ -350,7 +418,7 @@ export default function MockExamPage() {
                     </div>
                     <div className="space-y-2">
                         <h3 className="text-3xl font-black italic tracking-tighter">Ready to Submit?</h3>
-                        <p className="text-lg text-text-secondary font-medium">You have answered <span className="text-primary font-black">{Object.keys(answers).length}</span> out of <span className="text-primary font-black">{EXAM_DATA.totalQuestions}</span> questions. Action cannot be undone.</p>
+                        <p className="text-lg text-text-secondary font-medium">You have answered <span className="text-primary font-black">{Object.keys(answers).length}</span> out of <span className="text-primary font-black">{exam.totalQuestions}</span> questions. Action cannot be undone.</p>
                     </div>
                     <div className="flex gap-4 pt-4">
                         <button 

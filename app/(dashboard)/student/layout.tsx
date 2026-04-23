@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { 
@@ -47,8 +47,14 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const { profile, logout } = useAuth();
+
+  // Polished hydration check for next-themes
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const initials = profile?.displayName
     ? profile.displayName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
@@ -98,8 +104,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             </div>
             {!collapsed && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                    <p className="font-black text-sm text-text-primary">{displayName}</p>
-                    <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">{profile?.role === "tutor" ? "Tutor" : "Student"}</p>
+                    <p className="font-black text-sm text-slate-900 dark:text-white">{displayName}</p>
+                    <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 dark:text-slate-400">{profile?.role === "tutor" ? "Tutor" : "Student"}</p>
                 </div>
             )}
         </div>
@@ -152,10 +158,17 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
           <div className="flex items-center gap-4">
             <button 
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="w-10 h-10 rounded-base flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                className="w-10 h-10 rounded-base flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-700 dark:text-slate-200"
+                aria-label="Toggle Theme"
             >
-                {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+                {!mounted ? (
+                  <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded-full animate-pulse" />
+                ) : resolvedTheme === "dark" ? (
+                  <Sun size={20} className="text-yellow-400" />
+                ) : (
+                  <Moon size={20} className="text-slate-700" />
+                )}
             </button>
 
             <button className="relative w-10 h-10 rounded-base flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">

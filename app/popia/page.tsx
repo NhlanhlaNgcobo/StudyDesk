@@ -26,8 +26,8 @@ const Section = ({ id, title, icon: Icon, children }: { id: string; title: strin
   </motion.section>
 );
 
-const P = ({ children }: { children: React.ReactNode }) => (
-  <p className="leading-relaxed font-medium">{children}</p>
+const P = ({ children, className }: { children: React.ReactNode; className?: string }) => (
+  <p className={`leading-relaxed font-medium ${className || ""}`}>{children}</p>
 );
 
 const CheckItem = ({ children }: { children: React.ReactNode }) => (
