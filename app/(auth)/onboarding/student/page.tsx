@@ -9,8 +9,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { GraduationCap, Landmark, BookOpen, Calendar, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
-import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/auth-provider";
+import { auth, db } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const universities = ["UCT", "Wits", "UKZN", "UP", "SU", "UJ", "NWU", "RU", "UWC", "UL", "MUT", "DUT", "CPUT", "TUT", "VUT", "UFH", "WSU", "UNIVEN", "SMU", "UZ"];
@@ -53,6 +53,7 @@ export default function StudentOnboardingPage() {
       await setDoc(doc(db, "users", user.uid), {
         id: user.uid,
         name: data.fullName,
+        fullName: data.fullName,
         email: user.email,
         university: data.university,
         degree: data.degree,
@@ -62,8 +63,9 @@ export default function StudentOnboardingPage() {
         points: 0,
         streak: 1,
         rank: "Scholar",
+        onboardingComplete: true,
         createdAt: serverTimestamp(),
-      });
+      }, { merge: true });
       router.push("/student/dashboard");
     } catch (error) {
       console.error("Error saving profile:", error);

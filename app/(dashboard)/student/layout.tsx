@@ -27,9 +27,8 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { AITutorChat } from "@/components/shared/ai-tutor-chat";
 import { PomodoroTimer } from "@/components/shared/pomodoro-timer";
-import { useAuth } from "@/contexts/auth-context";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { useAuth } from "@/components/auth-provider";
+import { AuthGuard } from "@/components/auth-guard";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/student/dashboard" },
@@ -37,6 +36,7 @@ const NAV_ITEMS = [
   { icon: FileText, label: "Notes", href: "/student/notes" },
   { icon: Brain, label: "Quiz", href: "/student/quiz" },
   { icon: Clock, label: "Exams", href: "/student/exams" },
+  { icon: MessageSquare, label: "AI Tutor", href: "/student/ai-tutor" },
   { icon: MessageSquare, label: "Groups", href: "/student/groups" },
   { icon: Calendar, label: "Planner", href: "/student/planner" },
   { icon: BarChart2, label: "Analytics", href: "/student/analytics" },
@@ -44,18 +44,23 @@ const NAV_ITEMS = [
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+  const { setTheme, resolvedTheme } = useTheme();
 
+  // Polished hydration check for next-themes
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [user, loading, router]);
+    setMounted(true);
+  }, []);
+
+  const initials = profile?.name
+    ? profile.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()
+    : "?";
+  const displayName = profile?.name || profile?.email || "Student";
 
   // Loading gate — prevents UI flash while Firebase resolves
   if (loading) {
@@ -71,26 +76,15 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
     );
   }
 
-  // Guard — don't render dashboard content if unauthenticated
-  if (!user) return null;
-
   const activeLabel = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label || "Dashboard";
   const isImmersive = pathname.includes("/exams/") || pathname.includes("/quiz/");
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      router.replace("/login");
-    } catch (err) {
-      console.error("Logout error:", err);
-    }
-  };
-
   if (isImmersive) {
-    return <div className="min-h-screen bg-[#F8FAFF]">{children}</div>;
+    return <AuthGuard><div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950">{children}</div></AuthGuard>;
   }
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex">
       {/* Sidebar - Desktop */}
       <aside 
@@ -121,12 +115,12 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         {/* User Profile Info */}
         <div className={cn("px-6 py-8 flex flex-col items-center gap-4", collapsed ? "items-center" : "items-start")}>
             <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 text-primary font-black flex items-center justify-center rounded-full text-lg border-2 border-white dark:border-slate-800 shadow-sm">
-                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "NN"}
+                {initials}
             </div>
             {!collapsed && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                    <p className="font-black text-sm text-text-primary">{profile?.name || "Student"}</p>
-                    <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">{profile?.tier || "Premium Student"}</p>
+                    <p className="font-black text-sm text-slate-900 dark:text-white line-clamp-1">{displayName}</p>
+                    <p className="text-[10px] uppercase tracking-widest font-black text-slate-500 dark:text-slate-400">{profile?.tier || "Premium Student"}</p>
                 </div>
             )}
         </div>
@@ -179,10 +173,17 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
           <div className="flex items-center gap-4">
             <button 
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                className="w-10 h-10 rounded-base flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                className="w-10 h-10 rounded-base flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors text-slate-700 dark:text-slate-200"
+                aria-label="Toggle Theme"
             >
-                {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+                {!mounted ? (
+                  <div className="w-5 h-5 bg-slate-100 dark:bg-slate-800 rounded-full animate-pulse" />
+                ) : resolvedTheme === "dark" ? (
+                  <Sun size={20} className="text-yellow-400" />
+                ) : (
+                  <Moon size={20} className="text-slate-700" />
+                )}
             </button>
 
             <button className="relative w-10 h-10 rounded-base flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
@@ -195,7 +196,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="w-10 h-10 rounded-full overflow-hidden border-2 border-slate-100 hover:border-primary transition-all flex items-center justify-center bg-blue-50 text-primary font-bold text-sm"
               >
-                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "NN"}
+                {initials}
               </button>
               
               <AnimatePresence>
@@ -221,7 +222,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
                       </Link>
                     ))}
                     <button 
-                      onClick={() => { setShowProfileMenu(false); handleLogout(); }}
+                      onClick={() => { setShowProfileMenu(false); logout(); }}
                       className="flex items-center gap-3 px-4 py-3 rounded-base hover:bg-slate-50 dark:hover:bg-slate-800 font-bold transition-colors text-red-500 w-full"
                     >
                       <LogOut size={18} />
@@ -262,5 +263,6 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         </nav>
       </div>
     </div>
+    </AuthGuard>
   );
 }

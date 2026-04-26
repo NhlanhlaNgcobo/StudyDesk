@@ -31,6 +31,12 @@ const STEM_SUBJECTS = [
   "data science",
 ];
 
+// Updated to valid current Anthropic model identifiers
+const MODELS = {
+  sonnet: "claude-3-5-sonnet-20241022",
+  opus: "claude-3-opus-20240229",
+};
+
 /**
  * Determine which Claude model to use based on user tier and subject.
  * - Premium / Elite users always get Opus 3
@@ -38,13 +44,16 @@ const STEM_SUBJECTS = [
  * - Everyone else gets Sonnet 3.5
  */
 export function selectModel(options: ClaudeOptions): string {
-  const { userTier = "free" } = options;
-  // In 2026, Elite users get the powerhouse Opus 4.1
-  if (userTier === "elite") {
-    return "claude-opus-4-1-20250805";
+  const { userTier = "free", subject = "" } = options;
+  const isPremium = userTier === "premium" || userTier === "elite";
+  const isSTEM = STEM_SUBJECTS.some((s) =>
+    subject.toLowerCase().includes(s)
+  );
+
+  if (isPremium || (userTier === "basic" && isSTEM)) {
+    return MODELS.opus;
   }
-  // Standard and Premium users get the blazing fast Sonnet 4
-  return "claude-sonnet-4-20250514";
+  return MODELS.sonnet;
 }
 
 /**

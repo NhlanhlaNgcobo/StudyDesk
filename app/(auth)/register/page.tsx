@@ -176,6 +176,13 @@ export default function RegisterPage() {
             {errors.password && <p className="text-xs text-red-500 font-bold px-1 mt-1">{errors.password.message}</p>}
           </div>
 
+          {authError && (
+            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-base">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-red-600 font-bold">{authError}</p>
+            </div>
+          )}
+          
           <button
             type="submit"
             disabled={isSubmitting}
@@ -184,13 +191,6 @@ export default function RegisterPage() {
             {isSubmitting ? "Creating Account..." : "Create Account"}
             {!isSubmitting && <UserPlus size={20} className="group-hover:translate-x-1 transition-transform" />}
           </button>
-
-          {authError && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-base">
-              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
-              <p className="text-sm text-red-600 font-bold">{authError}</p>
-            </div>
-          )}
         </form>
 
         <div className="relative py-4">

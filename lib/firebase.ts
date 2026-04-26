@@ -1,29 +1,29 @@
-// ============================================================
-// StudyDesk — Firebase Client SDK Initialization
-// Uses singleton pattern to prevent duplicate instances during
-// Next.js HMR (Hot Module Replacement) cycles.
-// File storage is handled by Cloudinary (see /api/upload/sign).
-// ============================================================
-
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore, Timestamp } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
+import { getAnalytics, isSupported } from "firebase/analytics";
 
-// ── Firebase Config (from environment variables) ─────────────
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 // ── Singleton Initialization ─────────────────────────────────
 const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth: Auth = getAuth(app);
 const db: Firestore = getFirestore(app);
+const storage: FirebaseStorage = getStorage(app);
 
-export { app, auth, db };
+// Initialize Analytics (Client-side only)
+const analytics = typeof window !== "undefined" ? isSupported().then((supported) => supported ? getAnalytics(app) : null) : null;
+
+export { app, auth, db, storage, analytics };
 
 // ============================================================
 // Firestore Schema — TypeScript Interfaces
@@ -145,3 +145,4 @@ export interface NotificationDoc {
   read: boolean;
   type: "quiz" | "achievement" | "reminder" | "system";
 }
+

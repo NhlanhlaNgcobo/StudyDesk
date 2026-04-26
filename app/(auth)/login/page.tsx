@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,8 +9,10 @@ import { motion } from "framer-motion";
 import { LogIn, Mail, Lock, Zap, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { ThemeToggle } from "@/components/shared/theme-toggle";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -22,6 +24,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const router = useRouter();
   const [authError, setAuthError] = useState("");
+  const [loadingDemo, setLoadingDemo] = useState(false);
   const {
     register,
     handleSubmit,
@@ -29,6 +32,20 @@ export default function LoginPage() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   });
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        const role = snap.data()?.role;
+        if (role === "tutor") router.replace("/tutor/dashboard");
+        else if (role === "student") router.replace("/student/dashboard");
+        else router.replace("/role-select");
+      }
+    });
+    return () => unsub();
+  }, [router]);
 
   const getFirebaseErrorMessage = (code: string) => {
     switch (code) {
@@ -44,8 +61,12 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginForm) => {
     setAuthError("");
     try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
-      router.push("/student/dashboard");
+      const cred = await signInWithEmailAndPassword(auth, data.email, data.password);
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      const role = snap.data()?.role;
+      if (role === "tutor") router.push("/tutor/dashboard");
+      else if (role === "student") router.push("/student/dashboard");
+      else router.push("/role-select");
     } catch (err: any) {
       console.error("Login error:", err);
       setAuthError(getFirebaseErrorMessage(err.code));
@@ -56,8 +77,12 @@ export default function LoginPage() {
     setAuthError("");
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      router.push("/student/dashboard");
+      const cred = await signInWithPopup(auth, provider);
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      const role = snap.data()?.role;
+      if (role === "tutor") router.push("/tutor/dashboard");
+      else if (role === "student") router.push("/student/dashboard");
+      else router.push("/role-select");
     } catch (err: any) {
       console.error("Google login error:", err);
       if (err.code !== "auth/popup-closed-by-user") {
@@ -67,11 +92,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFF] flex items-center justify-center p-6">
+    <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex items-center justify-center p-6 relative">
+      <div className="absolute top-6 right-6">
+        <ThemeToggle />
+      </div>
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-white rounded-xl shadow-xl border border-slate-100 p-10 space-y-8"
+        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 p-10 space-y-8"
       >
         <div className="flex flex-col items-center gap-4 text-center">
             <Link href="/" className="flex items-center gap-2 mb-4 group scale-150">
@@ -80,21 +108,68 @@ export default function LoginPage() {
                 </div>
                 <span className="font-extrabold text-2xl tracking-tight">StudyDesk</span>
             </Link>
-            <h1 className="text-3xl font-extrabold tracking-tight">Welcome back!</h1>
-            <p className="text-slate-600 font-bold">Ready to dominate your syllabus?</p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Welcome back!</h1>
+            <p className="text-slate-600 dark:text-slate-400 font-bold">Ready to dominate your syllabus?</p>
+        </div>
+
+        <div className="space-y-4">
+          <button
+            type="button"
+            disabled={loadingDemo || isSubmitting}
+            onClick={async () => {
+              setAuthError("");
+              setLoadingDemo(true);
+              try {
+                // 1. Set the local bypass flag (Ensures immediate access even if Firebase is grumpy)
+                localStorage.setItem("studydesk_demo_active", "true");
+                
+                // 2. Try to establish a real Firebase session in the background
+                try {
+                  const cred = await signInAnonymously(auth);
+                  await setDoc(doc(db, "users", cred.user.uid), { 
+                    role: "student",
+                    isDemo: true,
+                    displayName: "Demo Student",
+                    onboardingComplete: true
+                  }, { merge: true });
+                } catch (firebaseError) {
+                  console.warn("Background Firebase Demo Init failed, using local bypass only:", firebaseError);
+                }
+
+                // 3. Move to dashboard (AuthProvider & AuthGuard will now allow this)
+                router.push("/student/dashboard");
+              } catch (error) {
+                console.error("Demo login error:", error);
+                setAuthError("Critical error starting demo. Please try regular login.");
+              } finally {
+                setLoadingDemo(false);
+              }
+            }}
+            className="w-full py-5 bg-slate-900 text-white font-black rounded-base text-lg hover:shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-3 group border-b-4 border-black active:border-b-0 active:translate-y-1 shadow-xl"
+          >
+            {loadingDemo ? "Launching..." : "Enter as Demo Student"}
+            {!loadingDemo && <Zap size={22} className="text-primary fill-primary group-hover:scale-125 transition-transform" />}
+          </button>
+
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t-2 border-slate-100 dark:border-slate-800"></span></div>
+            <div className="relative flex justify-center text-[10px] uppercase font-black tracking-[0.2em] text-slate-400">
+              <span className="bg-white dark:bg-slate-900 px-4">Or use your credentials</span>
+            </div>
+          </div>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
           <div className="space-y-2">
-            <label className="text-sm font-bold uppercase tracking-wider text-text-secondary px-1">Email Address</label>
+            <label className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">Email Address</label>
             <div className="relative group">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" size={20} />
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-primary transition-colors" size={20} />
               <input
                 {...register("email")}
                 type="email"
                 placeholder="you@university.ac.za"
                 className={cn(
-                  "w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent rounded-base outline-none focus:border-primary focus:bg-white transition-all font-medium",
+                  "w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-950/50 border-2 border-transparent dark:border-slate-800 rounded-base outline-none focus:border-primary dark:focus:border-primary focus:bg-white dark:focus:bg-slate-900 transition-all font-medium text-slate-900 dark:text-white",
                   errors.email && "border-red-400 focus:border-red-400 bg-red-50/10"
                 )}
               />
@@ -104,17 +179,17 @@ export default function LoginPage() {
 
           <div className="space-y-2">
             <div className="flex justify-between px-1">
-                <label className="text-sm font-bold uppercase tracking-wider text-slate-700">Password</label>
+                <label className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Password</label>
                 <Link href="#" className="text-xs font-black text-primary hover:underline uppercase tracking-widest">Forgot password?</Link>
             </div>
             <div className="relative group">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary group-focus-within:text-primary transition-colors" size={20} />
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-primary transition-colors" size={20} />
               <input
                 {...register("password")}
                 type="password"
                 placeholder="••••••••"
                 className={cn(
-                  "w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent rounded-base outline-none focus:border-primary focus:bg-white transition-all font-medium",
+                  "w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-950/50 border-2 border-transparent dark:border-slate-800 rounded-base outline-none focus:border-primary dark:focus:border-primary focus:bg-white dark:focus:bg-slate-900 transition-all font-medium text-slate-900 dark:text-white",
                   errors.password && "border-red-400 focus:border-red-400 bg-red-50/10"
                 )}
               />
@@ -122,6 +197,13 @@ export default function LoginPage() {
             {errors.password && <p className="text-xs text-red-500 font-bold px-1">{errors.password.message}</p>}
           </div>
 
+          {authError && (
+            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-base">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-red-600 font-bold">{authError}</p>
+            </div>
+          )}
+          
           <button
             type="submit"
             disabled={isSubmitting}
@@ -130,26 +212,19 @@ export default function LoginPage() {
             {isSubmitting ? "Logging in..." : "Login"}
             {!isSubmitting && <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />}
           </button>
-
-          {authError && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-base">
-              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
-              <p className="text-sm text-red-600 font-bold">{authError}</p>
-            </div>
-          )}
         </form>
 
          <div className="relative py-4">
-            <div className="absolute inset-0 flex items-center"><span className="w-full border-t-2 border-slate-100"></span></div>
+            <div className="absolute inset-0 flex items-center"><span className="w-full border-t-2 border-slate-100 dark:border-slate-800"></span></div>
             <div className="relative flex justify-center text-[10px] uppercase font-black tracking-[0.2em] text-slate-500">
-              <span className="bg-white px-4">Or continue with</span>
+              <span className="bg-white dark:bg-slate-900 px-4">Or continue with</span>
             </div>
          </div>
 
         <button 
            type="button"
            onClick={handleGoogleLogin}
-           className="w-full py-4 border-2 border-slate-100 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all"
+           className="w-full py-4 border-2 border-slate-100 dark:border-slate-800 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-slate-900 dark:text-white"
         >
            <svg className="w-5 h-5" viewBox="0 0 24 24">
              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>

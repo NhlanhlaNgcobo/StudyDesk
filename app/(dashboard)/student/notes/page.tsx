@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { FileText, Search, Plus, Clock, Tag, BookOpen, ArrowRight, Zap, SlidersHorizontal } from "lucide-react";
+import { FileText, Search, Plus, Clock, Tag, BookOpen, ArrowRight, Zap, SlidersHorizontal, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { DEMO_NOTES, DEMO_MODULES } from "@/lib/mock-data";
+import { db, auth } from "@/lib/firebase";
+import { collectionGroup, query, where, onSnapshot, orderBy } from "firebase/firestore";
 
 const DIFFICULTY_COLORS: Record<string, string> = {
   Arrays: "bg-blue-100 text-blue-600",
@@ -22,27 +23,55 @@ const DIFFICULTY_COLORS: Record<string, string> = {
   Equilibrium: "bg-indigo-100 text-indigo-600",
 };
 
-const MODULE_FILTERS = ["All", ...DEMO_MODULES.map((m) => m.tags[0])];
-
 export default function NotesPage() {
   const [search, setSearch] = useState("");
   const [moduleFilter, setModuleFilter] = useState("All");
-  const [generating, setGenerating] = useState(false);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = DEMO_NOTES.filter((n) => {
+  useEffect(() => {
+    const q = query(collectionGroup(db, "notes"), orderBy("createdAt", "desc"));
+    
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const notesData = snap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        date: doc.data().createdAt?.toDate()?.toLocaleDateString() || "Recent"
+      }));
+      setNotes(notesData);
+      setLoading(false);
+    }, (err) => {
+      console.error("Firestore error:", err);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const modules = Array.from(new Set(notes.map(n => n.moduleName).filter(Boolean))) as string[];
+  const moduleFilters = ["All", ...modules];
+
+  const filtered = notes.filter((n) => {
     const matchSearch =
-      n.title.toLowerCase().includes(search.toLowerCase()) ||
-      n.preview.toLowerCase().includes(search.toLowerCase());
+      n.topic?.toLowerCase().includes(search.toLowerCase()) ||
+      n.preview?.toLowerCase().includes(search.toLowerCase());
     const matchModule =
-      moduleFilter === "All" ||
-      DEMO_MODULES.find((m) => m.id === n.moduleId)?.tags[0] === moduleFilter;
+      moduleFilter === "All" || n.moduleName === moduleFilter;
     return matchSearch && matchModule;
   });
 
   const handleGenerate = () => {
-    setGenerating(true);
-    setTimeout(() => setGenerating(false), 2000);
+    window.location.href = "/student/modules";
   };
+
+  if (loading) {
+      return (
+          <div className="flex flex-col items-center justify-center py-32 space-y-4">
+              <Loader2 size={40} className="text-primary animate-spin" />
+              <p className="font-black uppercase tracking-widest text-xs text-text-secondary">Loading your notes...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
@@ -58,15 +87,10 @@ export default function NotesPage() {
         </div>
         <button
           onClick={handleGenerate}
-          disabled={generating}
-          className="px-8 py-4 bg-primary text-white font-bold text-lg rounded-base flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all disabled:opacity-60"
+          className="px-8 py-4 bg-primary text-white font-bold text-lg rounded-base flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all"
         >
-          {generating ? (
-            <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Zap size={22} fill="currentColor" />
-          )}
-          {generating ? "Generating..." : "Generate New Notes"}
+          <Zap size={22} fill="currentColor" />
+          Generate New Notes
         </button>
       </section>
 
@@ -77,14 +101,14 @@ export default function NotesPage() {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input
               type="text"
-              placeholder="Search notes by title or content..."
+              placeholder="Search notes by topic or content..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-primary rounded-base outline-none transition-all font-medium"
             />
           </div>
           <div className="flex items-center gap-2 overflow-x-auto pb-2 lg:pb-0 w-full lg:w-auto px-1 no-scrollbar">
-            {MODULE_FILTERS.map((f) => (
+            {moduleFilters.map((f: string) => (
               <button
                 key={f}
                 onClick={() => setModuleFilter(f)}
@@ -129,37 +153,25 @@ export default function NotesPage() {
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1">{note.moduleName}</p>
                     <h3 className="text-lg font-bold tracking-tight group-hover:text-primary transition-colors leading-snug">
-                      {note.title}
+                      {note.topic}
                     </h3>
                   </div>
 
-                  <p className="text-sm text-text-secondary font-medium leading-relaxed line-clamp-3">{note.preview}</p>
+                  <p className="text-sm text-text-secondary font-medium leading-relaxed line-clamp-3">
+                      {note.preview || "No preview available."}
+                  </p>
 
-                  <div className="flex flex-wrap gap-2 mt-auto pt-2">
-                    {note.tags.map((t) => (
-                      <span
-                        key={t}
-                        className={cn(
-                          "text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full",
-                          DIFFICULTY_COLORS[t] || "bg-slate-100 text-slate-500"
-                        )}
-                      >
-                        {t}
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center gap-4 text-xs font-bold text-text-secondary border-t pt-4">
-                    <span className="flex items-center gap-1.5"><Clock size={13} /> {note.readTime} read</span>
-                    <span className="flex items-center gap-1.5"><Tag size={13} /> {note.wordCount.toLocaleString()} words</span>
+                  <div className="flex items-center gap-4 text-xs font-bold text-text-secondary border-t pt-4 mt-auto">
+                    <span className="flex items-center gap-1.5"><Clock size={13} /> {note.readTime || "5 min"} read</span>
+                    <span className="flex items-center gap-1.5"><Tag size={13} /> {(note.wordCount || 0).toLocaleString()} words</span>
                   </div>
                 </div>
 
                 <Link
-                  href={`/student/notes/${note.id}`}
+                  href={`/student/modules/${note.moduleId}`}
                   className="w-full py-4 bg-slate-50 dark:bg-slate-800 group-hover:bg-primary group-hover:text-white transition-all text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-2 border-t border-slate-100 dark:border-slate-800 rounded-b-xl"
                 >
-                  Read Note <ArrowRight size={16} />
+                  View in Module <ArrowRight size={16} />
                 </Link>
               </motion.div>
             ))}
@@ -181,3 +193,4 @@ export default function NotesPage() {
     </div>
   );
 }
+

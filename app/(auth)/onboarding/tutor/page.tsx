@@ -9,8 +9,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Presentation, Landmark, User, Hash, ArrowRight, ArrowLeft, X, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/contexts/auth-context";
-import { db } from "@/lib/firebase";
+import { useAuth } from "@/components/auth-provider";
+import { auth, db } from "@/lib/firebase";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const tutorOnboardingSchema = z.object({
@@ -66,6 +66,7 @@ export default function TutorOnboardingPage() {
       await setDoc(doc(db, "users", user.uid), {
         id: user.uid,
         name: data.fullName,
+        fullName: data.fullName,
         email: user.email,
         university: data.university,
         subjects: data.subjects,
@@ -75,8 +76,9 @@ export default function TutorOnboardingPage() {
         points: 0,
         streak: 1,
         rank: "Master",
+        onboardingComplete: true,
         createdAt: serverTimestamp(),
-      });
+      }, { merge: true });
       router.push("/tutor/dashboard");
     } catch (error) {
       console.error("Error saving profile:", error);

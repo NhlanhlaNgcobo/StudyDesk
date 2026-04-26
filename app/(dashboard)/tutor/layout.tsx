@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { 
@@ -13,16 +13,14 @@ import {
   Bell,
   Search,
   LogOut,
-  User as UserIcon,
   Sun,
   Moon
 } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/contexts/auth-context";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { useAuth } from "@/components/auth-provider";
+import { AuthGuard } from "@/components/auth-guard";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/tutor/dashboard" },
@@ -33,22 +31,22 @@ const NAV_ITEMS = [
 ];
 
 export default function TutorLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { theme, setTheme } = useTheme();
 
-  useEffect(() => {
-    if (!loading && !user) {
-      router.replace("/login");
-    }
-  }, [user, loading, router]);
+  const initials = profile?.displayName
+    ? profile.displayName.split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()
+    : profile?.email?.[0].toUpperCase() || "?";
+  
+  const displayName = profile?.displayName || profile?.email || "Tutor";
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await logout();
       router.replace("/login");
     } catch (err) {
       console.error("Logout error:", err);
@@ -73,6 +71,7 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
   const activeLabel = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label || "Dashboard";
 
   return (
+    <AuthGuard>
     <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex font-inter selection:bg-emerald-100 selection:text-emerald-700">
       {/* Sidebar - Desktop */}
       <aside 
@@ -103,13 +102,13 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         {/* User Profile Info */}
         <div className={cn("px-6 py-8 flex flex-col items-center gap-4", collapsed ? "items-center" : "items-start")}>
             <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 font-black flex items-center justify-center rounded-full text-lg border-2 border-white dark:border-slate-800 shadow-sm relative">
-                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "TA"}
+                {initials}
                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full" />
             </div>
             {!collapsed && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="flex items-center gap-2">
-                         <p className="font-black text-sm text-text-primary">{profile?.name || "Tutor"}</p>
+                         <p className="font-black text-sm text-text-primary">{displayName}</p>
                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[8px] font-black uppercase tracking-widest leading-none">Tutor</span>
                     </div>
                     <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">{profile?.university || "Official Educator"}</p>
@@ -191,7 +190,7 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-50 hover:border-emerald-500 transition-all flex items-center justify-center bg-emerald-50 text-emerald-600 font-bold text-sm"
               >
-                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "TA"}
+                                {initials}
               </button>
             </div>
           </div>
@@ -203,5 +202,6 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         </main>
       </div>
     </div>
+    </AuthGuard>
   );
 }

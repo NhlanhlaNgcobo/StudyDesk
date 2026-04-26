@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Users ──────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ── Modules + subcollections ────────────────────────────────────────────
+    match /modules/{moduleId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && resource.data.ownerId == request.auth.uid;
+
+      // Files uploaded to a module
+      match /files/{fileId} {
+        allow read, create, delete: if request.auth != null;
+      }
+
+      // AI-generated notes saved to a module
+      match /notes/{noteId} {
+        allow read, create, delete: if request.auth != null;
+      }
+
+      // AI-generated quizzes saved to a module
+      match /quizzes/{quizId} {
+        allow read, create, delete: if request.auth != null;
+      }
+
+      // Flashcards saved to a module
+      match /flashcards/{flashcardId} {
+        allow read, create, delete: if request.auth != null;
+      }
+    }
+
+    // ── Global Notes (legacy) ───────────────────────────────────────────────
+    match /notes/{noteId} {
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // ── Quiz Results ────────────────────────────────────────────────────────
+    match /quizResults/{resultId} {
+      allow read, write: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // ── Payments (server-side only) ─────────────────────────────────────────
+    match /payments/{paymentId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+  }
+}

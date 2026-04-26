@@ -3,11 +3,37 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { GraduationCap, Presentation as Chalkboard, Check, ArrowRight } from "lucide-react";
+import { GraduationCap, Presentation as Chalkboard, Check, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { useRouter } from "next/navigation";
 
 export default function RoleSelectPage() {
   const [role, setRole] = useState<'student' | 'tutor' | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const router = useRouter();
+
+  const handleContinue = async () => {
+    if (!role) return;
+    const user = auth.currentUser;
+    if (!user) {
+      setError("Session expired. Please log in again.");
+      router.push("/login");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    try {
+      await setDoc(doc(db, "users", user.uid), { role }, { merge: true });
+      router.push(role === "student" ? "/onboarding/student" : "/onboarding/tutor");
+    } catch (e: any) {
+      setError("Failed to save role. Please try again.");
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFF] flex flex-col items-center justify-center p-6 space-y-12">
@@ -18,7 +44,7 @@ export default function RoleSelectPage() {
             </div>
             <span className="font-extrabold text-2xl tracking-tight">StudyDesk</span>
         </Link>
-        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight underline italic decoration-primary decoration-4">What's your goal?</h1>
+        <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight underline italic decoration-primary decoration-4">What&apos;s your goal?</h1>
         <p className="text-xl text-text-secondary font-medium">Select your primary role to customize your workspace.</p>
       </div>
 
@@ -96,16 +122,20 @@ export default function RoleSelectPage() {
         </motion.div>
       </div>
 
+      {error && <p className="text-red-500 font-bold text-center">{error}</p>}
+
       <div className="w-full max-w-4xl flex justify-center pt-8">
-         <Link 
-            href={role === 'student' ? "/onboarding/student" : role === 'tutor' ? "/onboarding/tutor" : "#"}
+         <button 
+            onClick={handleContinue}
+            disabled={!role || loading}
             className={cn(
                 "px-12 py-5 bg-primary text-white font-black text-xl rounded-base flex items-center gap-3 transition-all",
-                !role ? "opacity-30 cursor-not-allowed pointer-events-none grayscale" : "hover:shadow-2xl hover:shadow-primary/30 hover:-translate-y-1 active:scale-95"
+                !role || loading ? "opacity-30 cursor-not-allowed" : "hover:shadow-2xl hover:shadow-primary/30 hover:-translate-y-1 active:scale-95"
             )}
          >
-            Continue Journey <ArrowRight size={24} />
-         </Link>
+            {loading ? <Loader2 size={24} className="animate-spin" /> : null}
+            {loading ? "Saving..." : <>Continue Journey <ArrowRight size={24} /></>}
+         </button>
       </div>
     </div>
   );

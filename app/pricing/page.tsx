@@ -23,6 +23,15 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import type { PaymentProvider } from "@/lib/payments";
+import { auth } from "@/lib/firebase";
+
+const PROVIDERS: { id: PaymentProvider; label: string; logo: string; desc: string }[] = [
+  { id: "payfast", label: "PayFast", logo: "PF", desc: "Card, EFT, SnapScan" },
+  { id: "paystack", label: "Paystack", logo: "PS", desc: "Card, Mobile Money" },
+  { id: "yoco", label: "Yoco", logo: "YC", desc: "Card, QR Pay" },
+  { id: "payshap", label: "PayShap", logo: "SH", desc: "Instant Bank Transfer" },
+];
 
 // --- Pricing Context Mock ---
 
@@ -107,7 +116,7 @@ const PACKAGES = [
 
 // --- Sub-components ---
 
-const PackageCard = ({ pkg, billingCycle }: any) => {
+const PackageCard = ({ pkg, billingCycle, onCheckout, isLoading }: any) => {
     const isFree = pkg.id === "free";
     const currentPrice = billingCycle === "monthly" ? pkg.price : pkg.annualPrice;
     const effectivePrice = billingCycle === "monthly" ? pkg.price : `R${Math.round(parseInt(pkg.annualPrice.slice(1)) / 12)}`;
@@ -152,13 +161,17 @@ const PackageCard = ({ pkg, billingCycle }: any) => {
                 </div>
             </div>
 
-            <button className={cn(
-                "w-full py-5 rounded-xl font-black uppercase text-xs tracking-widest mt-12 transition-all active:scale-95 shadow-xl",
-                pkg.popular 
-                    ? "bg-primary text-white shadow-primary/20 hover:shadow-primary/40" 
-                    : "bg-slate-900 dark:bg-slate-800 text-white hover:bg-primary shadow-slate-900/20"
-            )}>
-                Get Started Now
+            <button 
+                onClick={() => onCheckout(pkg.id)}
+                disabled={isLoading}
+                className={cn(
+                    "w-full py-5 rounded-xl font-black uppercase text-xs tracking-widest mt-12 transition-all active:scale-95 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed",
+                    pkg.popular 
+                        ? "bg-primary text-white shadow-primary/20 hover:shadow-primary/40" 
+                        : "bg-slate-900 dark:bg-slate-800 text-white hover:bg-primary shadow-slate-900/20"
+                )}
+            >
+                {isLoading ? "Redirecting..." : isFree ? "Get Started" : "Upgrade Now"}
             </button>
         </div>
     );
@@ -168,10 +181,43 @@ export default function PricingPage() {
     const [billingCycle, setBillingCycle] = useState<"monthly" | "annually">("monthly");
     const [referralCode, setReferralCode] = useState("STUDY_G67H9");
     const [copied, setCopied] = useState(false);
+    const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+    const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>("payfast");
 
     const handleCopy = () => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleCheckout = async (planId: string) => {
+        try {
+            setLoadingPlan(planId);
+            const response = await fetch("/api/checkout/payfast", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    planId,
+                    billingCycle,
+                    provider: selectedProvider,
+                    userEmail: auth.currentUser?.email || "",
+                    userName: auth.currentUser?.displayName || "",
+                    userId: auth.currentUser?.uid || "",
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.url) {
+                window.location.href = data.url;
+            } else {
+                alert(data.error || "Failed to initiate checkout");
+            }
+        } catch (error) {
+            console.error("Checkout Error:", error);
+            alert("Something went wrong. Please try again.");
+        } finally {
+            setLoadingPlan(null);
+        }
     };
 
     return (
@@ -199,6 +245,28 @@ export default function PricingPage() {
                 </h1>
                 <p className="text-2xl text-slate-600 dark:text-slate-400 font-bold max-w-3xl mx-auto">Flexible academic powerups designed for the South African student life.</p>
                 
+                {/* Payment Provider Selector */}
+                <div className="flex flex-wrap justify-center gap-3 pt-6">
+                    {PROVIDERS.map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => setSelectedProvider(p.id)}
+                            className={cn(
+                                "flex items-center gap-3 px-5 py-3 rounded-xl border-2 font-black text-sm transition-all",
+                                selectedProvider === p.id
+                                    ? "border-primary bg-primary/5 text-primary shadow-lg shadow-primary/10"
+                                    : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
+                            )}
+                        >
+                            <div className="w-7 h-7 rounded-lg bg-slate-900 text-white text-[9px] font-black flex items-center justify-center shrink-0">{p.logo}</div>
+                            <div className="text-left">
+                                <p className="text-xs font-black uppercase tracking-widest">{p.label}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{p.desc}</p>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+
                 {/* Billing Toggle */}
                 <div className="flex items-center justify-center gap-6 pt-8">
                     <span className={cn("text-sm font-black uppercase tracking-widest", billingCycle === "monthly" ? "text-primary" : "text-slate-400")}>Monthly</span>
@@ -222,7 +290,13 @@ export default function PricingPage() {
             <section className="max-w-7xl mx-auto px-6 pb-32">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 items-start">
                     {PACKAGES.map(pkg => (
-                        <PackageCard key={pkg.id} pkg={pkg} billingCycle={billingCycle} />
+                        <PackageCard 
+                            key={pkg.id} 
+                            pkg={pkg} 
+                            billingCycle={billingCycle} 
+                            onCheckout={handleCheckout}
+                            isLoading={loadingPlan === pkg.id}
+                        />
                     ))}
                 </div>
             </section>
@@ -287,11 +361,11 @@ export default function PricingPage() {
                  <div className="max-w-7xl mx-auto px-6 text-center space-y-8">
                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">© 2026 StudyDesk. Academic Sovereignty for South Africa.</p>
                      <div className="flex justify-center gap-12 font-black uppercase text-[10px] tracking-widest text-slate-600 dark:text-slate-400">
-                        <Link href="#">Terms</Link>
-                        <Link href="#">Privacy</Link>
-                        <Link href="#">POPIA</Link>
-                        <Link href="#">Support</Link>
-                     </div>
+                        <Link href="/terms" className="hover:text-primary transition-all">Terms</Link>
+                        <Link href="/privacy" className="hover:text-primary transition-all">Privacy</Link>
+                        <Link href="/popia" className="hover:text-primary transition-all">POPIA</Link>
+                        <Link href="mailto:support@studydesk.co.za" className="hover:text-primary transition-all">Support</Link>
+                      </div>
                  </div>
             </footer>
         </div>
