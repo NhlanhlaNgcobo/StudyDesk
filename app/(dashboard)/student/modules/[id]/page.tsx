@@ -21,11 +21,13 @@ import {
   BrainCircuit,
   Timer,
   BookOpen,
+  Filter,
+  CheckCircle,
+  Cloud,
   Loader2,
   CheckCircle2,
   Sparkles,
   Search,
-  Filter,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -45,6 +47,7 @@ import {
   increment,
 } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
+import { useAuth } from "@/components/auth-provider";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -99,7 +102,7 @@ const TABS = ["Materials", "Notes", "Quizzes", "Exams"];
 // ─── Breadcrumbs ─────────────────────────────────────────────────────────────
 
 const Breadcrumbs = ({ moduleName }: { moduleName: string }) => (
-  <nav className="flex items-center gap-3 text-xs font-black uppercase tracking-widest text-text-secondary mb-10">
+  <nav className="flex items-center gap-3 text-xs font-black uppercase tracking-widest text-slate-500 mb-10">
     <Link href="/student/modules" className="hover:text-primary transition-colors">
       Modules
     </Link>
@@ -110,9 +113,12 @@ const Breadcrumbs = ({ moduleName }: { moduleName: string }) => (
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+type ProcessState = "idle" | "extracting" | "generating" | "complete" | "error";
+
 export default function ModuleDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { user, profile } = useAuth();
   const moduleId = params.id as string;
 
   const [module, setModule] = useState<Module | null>(null);
@@ -130,24 +136,11 @@ export default function ModuleDetailPage() {
   const [showGenModal, setShowGenModal] = useState<"notes" | "quiz" | "exam" | null>(null);
   const [genDifficulty, setGenDifficulty] = useState("Medium");
   const [genNumQ, setGenNumQ] = useState(5);
+  const [processState, setProcessState] = useState<ProcessState>("idle");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [userTier, setUserTier] = useState<string>("free");
-
-  // ── Load user tier ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        getDoc(doc(db, "users", user.uid)).then((snap) => {
-          if (snap.exists()) {
-            setUserTier(snap.data().tier || "free");
-          }
-        });
-      }
-    });
-    return () => unsubscribe();
-  }, []);
+  const userTier = profile?.tier || "free";
 
   // ── Load module ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -159,7 +152,7 @@ export default function ModuleDetailPage() {
         router.push("/student/modules");
       }
     });
-  }, [moduleId]);
+  }, [moduleId, router]);
 
   // ── Load files ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -439,7 +432,7 @@ export default function ModuleDetailPage() {
                   </div>
                   <div>
                     <p className="text-lg font-black leading-none">{s.val}</p>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
                       {s.label}
                     </p>
                   </div>
@@ -475,16 +468,16 @@ export default function ModuleDetailPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex px-10 border-t overflow-x-auto no-scrollbar bg-slate-50/50">
+        <div className="flex px-10 border-t overflow-x-auto no-scrollbar bg-slate-50/50 dark:bg-slate-800/50 dark:border-slate-800">
           {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "px-8 py-5 text-sm font-black uppercase tracking-widest transition-all relative border-b-4",
+                "px-8 py-5 text-sm font-black uppercase tracking-widest transition-all relative border-b-4 whitespace-nowrap",
                 activeTab === tab
-                  ? "text-primary border-primary bg-white"
-                  : "text-slate-400 border-transparent hover:text-slate-600 hover:bg-white/50"
+                  ? "text-primary border-primary bg-white dark:bg-slate-900"
+                  : "text-slate-400 border-transparent hover:text-slate-600 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-slate-800/50"
               )}
             >
               {tab}
@@ -527,10 +520,10 @@ export default function ModuleDetailPage() {
                       <Upload size={36} />
                     </div>
                     <h3 className="text-2xl font-black mb-2 tracking-tight">Drop your files here</h3>
-                    <p className="text-text-secondary font-medium max-w-xs mx-auto">
+                    <p className="text-slate-500 dark:text-slate-400 font-medium max-w-xs mx-auto">
                       Upload PDFs, notes, or slides. Our AI will index them for quiz and note generation.
                     </p>
-                    <button className="mt-8 px-6 py-3 bg-white border border-slate-100 rounded-base font-black uppercase text-xs tracking-widest shadow-lg shadow-slate-200/20 group-hover:bg-primary group-hover:text-white transition-all">
+                    <button className="mt-8 px-6 py-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-base font-black uppercase text-xs tracking-widest shadow-lg shadow-slate-200/20 group-hover:bg-primary group-hover:text-white transition-all">
                       Browse Local Files
                     </button>
                   </>
@@ -541,11 +534,11 @@ export default function ModuleDetailPage() {
               <div className="space-y-6">
                 <div>
                   <h2 className="text-2xl font-black tracking-tight">Generate AI Power-ups</h2>
-                  <p className="text-text-secondary font-bold mt-1">Pick a topic or module, then fire up the AI.</p>
+                  <p className="text-slate-500 dark:text-slate-400 font-bold mt-1">Pick a topic or module, then fire up the AI.</p>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-text-secondary">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                     Topic / Chapter *
                   </label>
                   <input
@@ -553,7 +546,7 @@ export default function ModuleDetailPage() {
                     value={genTopic}
                     onChange={(e) => setGenTopic(e.target.value)}
                     placeholder="e.g. Linked Lists, Keynesian Economics..."
-                    className="w-full px-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium transition-all"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium transition-all"
                   />
                 </div>
 
@@ -572,7 +565,7 @@ export default function ModuleDetailPage() {
                         "flex-1 py-4 rounded-base flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs transition-all active:scale-95 border-2 group disabled:opacity-40 disabled:cursor-not-allowed",
                         btn.variant === "primary"
                           ? "bg-primary border-primary text-white hover:shadow-xl hover:shadow-primary/30"
-                          : "border-slate-100 hover:border-primary hover:text-primary dark:border-slate-800"
+                          : "border-slate-100 dark:border-slate-800 hover:border-primary hover:text-primary"
                       )}
                     >
                       <btn.icon size={18} className={cn(btn.variant === "outline" && "text-primary group-hover:scale-110 transition-transform")} />
@@ -593,7 +586,7 @@ export default function ModuleDetailPage() {
                     <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-2 italic">
                       AI-Powered Content
                     </h4>
-                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                    <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed">
                       Generated content is saved to your module workspace automatically. Enter a topic and hit Generate.
                     </p>
                   </div>
@@ -605,49 +598,51 @@ export default function ModuleDetailPage() {
             {files.length > 0 && (
               <section className="space-y-6">
                 <h2 className="text-2xl font-black tracking-tight">
-                  Study Files <span className="text-text-secondary font-medium ml-2">({files.length})</span>
+                  Study Files <span className="text-slate-500 dark:text-slate-400 font-medium ml-2">({files.length})</span>
                 </h2>
                 <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50/50 border-b">
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        <th className="px-8 py-5">Filename</th>
-                        <th className="px-8 py-5">Size</th>
-                        <th className="px-8 py-5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {files.map((file) => (
-                        <tr key={file.id} className="group hover:bg-slate-50 transition-colors">
-                          <td className="px-8 py-5">
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-red-100 text-red-500 rounded-base flex items-center justify-center shrink-0 border border-red-50">
-                                <FileIcon size={20} />
-                              </div>
-                              <div>
-                                <p className="font-black tracking-tight text-sm group-hover:text-primary transition-colors">
-                                  {file.name}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-8 py-5">
-                            <p className="text-xs font-black uppercase tracking-widest text-slate-500">{file.size}</p>
-                          </td>
-                          <td className="px-8 py-5">
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-2 hover:text-primary transition-colors hover:bg-white rounded-base shadow-sm border border-transparent hover:border-slate-100">
-                                <ExternalLink size={16} />
-                              </a>
-                              <button onClick={() => handleDeleteFile(file)} className="p-2 hover:text-red-500 transition-colors hover:bg-white rounded-base shadow-sm border border-transparent hover:border-slate-100">
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-50 dark:bg-slate-800/50 border-b dark:border-slate-800">
+                        <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                          <th className="px-8 py-5">Filename</th>
+                          <th className="px-8 py-5">Size</th>
+                          <th className="px-8 py-5 text-right">Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {files.map((file) => (
+                          <tr key={file.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                            <td className="px-8 py-5">
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/20 text-red-500 rounded-base flex items-center justify-center shrink-0 border border-red-50 dark:border-red-900/30">
+                                  <FileIcon size={20} />
+                                </div>
+                                <div>
+                                  <p className="font-black tracking-tight text-sm group-hover:text-primary transition-colors text-slate-900 dark:text-white">
+                                    {file.name}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-8 py-5">
+                              <p className="text-xs font-black uppercase tracking-widest text-slate-500">{file.size}</p>
+                            </td>
+                            <td className="px-8 py-5">
+                              <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-2 hover:text-primary transition-colors hover:bg-white dark:hover:bg-slate-800 rounded-base shadow-sm border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                                  <ExternalLink size={16} />
+                                </a>
+                                <button onClick={() => handleDeleteFile(file)} className="p-2 hover:text-red-500 transition-colors hover:bg-white dark:hover:bg-slate-800 rounded-base shadow-sm border border-transparent hover:border-slate-100 dark:hover:border-slate-700">
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </section>
             )}
@@ -665,11 +660,11 @@ export default function ModuleDetailPage() {
           >
             {notes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
-                  <FileText size={60} className="text-slate-200" />
+                <div className="w-48 h-48 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200 dark:border-slate-800">
+                  <FileText size={60} className="text-slate-200 dark:text-slate-800" />
                 </div>
                 <h2 className="text-2xl font-bold">No notes generated yet</h2>
-                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Notes.</p>
+                <p className="text-slate-500 dark:text-slate-400">Go to Materials, enter a topic and click Generate Notes.</p>
                 <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
                   Generate Notes
                 </button>
@@ -677,14 +672,14 @@ export default function ModuleDetailPage() {
             ) : (
               notes.map((note) => (
                 <div key={note.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <div className="px-8 py-5 border-b flex items-center justify-between bg-slate-50/50">
+                  <div className="px-8 py-5 border-b dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
                     <div className="flex items-center gap-3">
                       <Sparkles size={16} className="text-primary" />
-                      <h3 className="font-black text-lg tracking-tight">{note.topic}</h3>
+                      <h3 className="font-black text-lg tracking-tight text-slate-900 dark:text-white">{note.topic}</h3>
                     </div>
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">AI Generated</span>
                   </div>
-                  <div className="p-8 prose prose-sm max-w-none prose-headings:font-black prose-strong:font-black prose-code:text-primary prose-code:bg-primary/5 prose-code:px-1 prose-code:rounded">
+                  <div className="p-8 prose prose-sm max-w-none dark:prose-invert prose-headings:font-black prose-strong:font-black prose-code:text-primary prose-code:bg-primary/5 prose-code:px-1 prose-code:rounded">
                     <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
                       {note.content}
                     </ReactMarkdown>
@@ -706,11 +701,11 @@ export default function ModuleDetailPage() {
           >
             {quizzes.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
-                  <Brain size={60} className="text-slate-200" />
+                <div className="w-48 h-48 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200 dark:border-slate-800">
+                  <Brain size={60} className="text-slate-200 dark:text-slate-800" />
                 </div>
                 <h2 className="text-2xl font-bold">No quizzes generated yet</h2>
-                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Quiz.</p>
+                <p className="text-slate-500 dark:text-slate-400">Go to Materials, enter a topic and click Generate Quiz.</p>
                 <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
                   Generate Quiz
                 </button>
@@ -724,7 +719,7 @@ export default function ModuleDetailPage() {
                         <Brain size={24} className="text-primary" />
                       </div>
                       <div>
-                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors">
+                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors text-slate-900 dark:text-white">
                           {quiz.topic}
                         </h3>
                         <div className="flex items-center gap-2 mt-1">
@@ -762,11 +757,11 @@ export default function ModuleDetailPage() {
           >
             {exams.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
-                  <Timer size={60} className="text-slate-200" />
+                <div className="w-48 h-48 bg-slate-50 dark:bg-slate-900 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200 dark:border-slate-800">
+                  <Timer size={60} className="text-slate-200 dark:text-slate-800" />
                 </div>
                 <h2 className="text-2xl font-bold">No exams generated yet</h2>
-                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Mock Exam.</p>
+                <p className="text-slate-500 dark:text-slate-400">Go to Materials, enter a topic and click Generate Mock Exam.</p>
                 <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
                   Generate Exam
                 </button>
@@ -780,7 +775,7 @@ export default function ModuleDetailPage() {
                         <Timer size={24} className="text-primary" />
                       </div>
                       <div>
-                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors">
+                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors text-slate-900 dark:text-white">
                           {exam.topic}
                         </h3>
                         <div className="flex items-center gap-2 mt-1">
@@ -830,27 +825,27 @@ export default function ModuleDetailPage() {
                   {showGenModal === "notes" ? "Generate Notes" : showGenModal === "quiz" ? "Generate Quiz" : "Generate Exam"}
                 </h2>
                 {!generating && (
-                  <button onClick={() => setShowGenModal(null)} className="p-2 hover:bg-slate-100 rounded-full">
+                  <button onClick={() => setShowGenModal(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full">
                     <X size={18} />
                   </button>
                 )}
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-text-secondary">Topic *</label>
+                <label className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Topic *</label>
                 <input
                   type="text"
                   value={genTopic}
                   onChange={(e) => setGenTopic(e.target.value)}
                   placeholder="e.g. Sorting Algorithms, Keynesian Theory..."
-                  className="w-full px-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium"
                 />
               </div>
 
               {(showGenModal === "quiz" || showGenModal === "exam") && (
                 <>
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-text-secondary">Difficulty</label>
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Difficulty</label>
                     <div className="flex gap-2">
                       {["Easy", "Medium", "Hard"].map((d) => (
                         <button
@@ -858,7 +853,7 @@ export default function ModuleDetailPage() {
                           onClick={() => setGenDifficulty(d)}
                           className={cn(
                             "flex-1 py-2.5 rounded-base text-xs font-black uppercase tracking-widest border-2 transition-all",
-                            genDifficulty === d ? "bg-primary border-primary text-white" : "border-slate-100 text-slate-500 hover:border-primary/40"
+                            genDifficulty === d ? "bg-primary border-primary text-white" : "border-slate-100 dark:border-slate-800 text-slate-500 hover:border-primary/40"
                           )}
                         >
                           {d}
@@ -867,7 +862,7 @@ export default function ModuleDetailPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-text-secondary">
+                    <label className="text-xs font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
                       Number of Questions: {genNumQ}
                     </label>
                     <input
@@ -891,7 +886,7 @@ export default function ModuleDetailPage() {
                   <Loader2 size={24} className="animate-spin text-primary shrink-0" />
                   <div>
                     <p className="font-black text-primary text-sm">Claude is generating...</p>
-                    <p className="text-text-secondary text-xs">This may take 10–30 seconds.</p>
+                    <p className="text-slate-500 dark:text-slate-400 text-xs">This may take 10–30 seconds.</p>
                   </div>
                 </div>
               )}

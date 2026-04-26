@@ -1,7 +1,7 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
+import { getAuth, type Auth } from "firebase/auth";
+import { getFirestore, type Firestore, Timestamp } from "firebase/firestore";
+import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 const firebaseConfig = {
@@ -14,15 +14,135 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase (SSR friendly)
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-
-// Initialize Firebase services
-const auth = getAuth(app);
-const db = getFirestore(app);
-const storage = getStorage(app);
+// ── Singleton Initialization ─────────────────────────────────
+const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const auth: Auth = getAuth(app);
+const db: Firestore = getFirestore(app);
+const storage: FirebaseStorage = getStorage(app);
 
 // Initialize Analytics (Client-side only)
 const analytics = typeof window !== "undefined" ? isSupported().then((supported) => supported ? getAnalytics(app) : null) : null;
 
 export { app, auth, db, storage, analytics };
+
+// ============================================================
+// Firestore Schema — TypeScript Interfaces
+// These mirror the data shapes the UI currently consumes from
+// mock-data.ts. Each interface maps to a top-level Firestore
+// collection of the same name.
+// ============================================================
+
+/** Firestore: `users/{uid}` */
+export interface UserDoc {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  tier: "Free" | "Basic" | "Premium Student" | "Elite";
+  points: number;
+  streak: number;
+  rank: string;
+  role: "student" | "tutor" | "admin";
+  image?: string;
+  createdAt: Timestamp;
+}
+
+/** Firestore: `modules/{moduleId}` */
+export interface ModuleDoc {
+  id: string;
+  userId: string;
+  name: string;
+  subject: string;
+  fileCount: number;
+  progress: number;
+  color: string;
+  lastAccessed: Timestamp;
+  tags: string[];
+  notes: number;
+  quizzes: number;
+  exams: number;
+  flashcards: number;
+}
+
+/** Firestore: `notes/{noteId}` */
+export interface NoteDoc {
+  id: string;
+  userId: string;
+  moduleId: string;
+  moduleName: string;
+  title: string;
+  content: string;
+  preview: string;
+  wordCount: number;
+  readTime: string;
+  tags: string[];
+  createdAt: Timestamp;
+}
+
+/** Firestore: `quizzes/{quizId}` */
+export interface QuizDoc {
+  id: string;
+  userId: string;
+  moduleId: string;
+  moduleName: string;
+  title: string;
+  questions: number;
+  duration: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  bestScore: number | null;
+  attempts: number;
+  status: "Not Started" | "In Progress" | "Completed";
+  createdAt: Timestamp;
+}
+
+/** Firestore: `exams/{examId}` */
+export interface ExamDoc {
+  id: string;
+  userId: string;
+  moduleId: string;
+  moduleName: string;
+  title: string;
+  questions: number;
+  duration: string;
+  difficulty: "Easy" | "Medium" | "Hard";
+  bestScore: number | null;
+  attempts: number;
+  status: "Not Started" | "Scheduled" | "In Progress" | "Completed";
+  scheduledAt: Timestamp;
+}
+
+/** Firestore: `sessions/{sessionId}` */
+export interface SessionDoc {
+  id: string;
+  userId: string;
+  title: string;
+  time: string;
+  duration: string;
+  tag: "Exam" | "Group" | "Solo";
+  type: "exam" | "group" | "study";
+}
+
+/** Firestore: `plannerEvents/{eventId}` */
+export interface PlannerEventDoc {
+  id: string;
+  userId: string;
+  title: string;
+  date: string;
+  time: string;
+  duration: number;
+  type: "exam" | "group" | "study" | "deadline";
+  module: string;
+  color: string;
+}
+
+/** Firestore: `notifications/{notifId}` */
+export interface NotificationDoc {
+  id: string;
+  userId: string;
+  title: string;
+  body: string;
+  time: Timestamp;
+  read: boolean;
+  type: "quiz" | "achievement" | "reminder" | "system";
+}
+

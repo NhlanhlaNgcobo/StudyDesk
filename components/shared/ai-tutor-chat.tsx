@@ -235,9 +235,15 @@ export function AITutorChat({
       content: userContent,
     };
 
+    // Anthropic requires the first message to be "user". 
+    // If our history starts with the assistant greeting, we skip it for the API call.
     const history: ChatMessage[] = messages
       .filter((m) => !m.streaming)
       .map((m) => ({ role: m.role, content: m.content }));
+
+    if (history.length > 0 && history[0].role === "assistant") {
+      history.shift();
+    }
 
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
@@ -309,8 +315,8 @@ export function AITutorChat({
     ]);
   };
 
-  const isPremium = userTier === "premium" || userTier === "elite";
-  const modelLabel = isPremium ? "Claude Opus 4" : "Claude Sonnet 4";
+  const isElite = userTier === "elite";
+  const modelLabel = isElite ? "Claude Opus 4.1" : "Claude Sonnet 4";
 
   return (
     <>

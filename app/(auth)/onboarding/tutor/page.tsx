@@ -6,11 +6,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Presentation, Landmark, User, Hash, ArrowRight, ArrowLeft, X, Sparkles } from "lucide-react";
+import { Presentation, Landmark, User, Hash, ArrowRight, ArrowLeft, X, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 import { auth, db } from "@/lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const tutorOnboardingSchema = z.object({
   fullName: z.string().min(2, "Full name required"),
@@ -22,11 +23,12 @@ const tutorOnboardingSchema = z.object({
 type OnboardingForm = z.infer<typeof tutorOnboardingSchema>;
 
 export default function TutorOnboardingPage() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const {
     register,
     handleSubmit,
@@ -35,7 +37,7 @@ export default function TutorOnboardingPage() {
     formState: { errors },
   } = useForm<OnboardingForm>({
     resolver: zodResolver(tutorOnboardingSchema),
-    defaultValues: { fullName: "Nhlanhla Ngcobo", subjects: [] }
+    defaultValues: { fullName: user?.displayName || "", subjects: [] }
   });
 
   const bioContent = watch("bio", "");
@@ -58,26 +60,30 @@ export default function TutorOnboardingPage() {
   const removeTag = (t: string) => setTags(tags.filter(tag => tag !== t));
 
   const onSubmit = async (data: OnboardingForm) => {
-    if (!auth.currentUser) {
-      console.error("No authenticated user found");
-      return;
-    }
-    setLoading(true);
+    if (!user) return;
+    setIsSubmitting(true);
     try {
-      const userRef = doc(db, "users", auth.currentUser.uid);
-      await setDoc(userRef, {
-        role: "tutor",
+      await setDoc(doc(db, "users", user.uid), {
+        id: user.uid,
+        name: data.fullName,
+        fullName: data.fullName,
+        email: user.email,
         university: data.university,
         subjects: data.subjects,
         bio: data.bio,
-        fullName: data.fullName,
+        role: "tutor",
+        tier: "Elite",
+        points: 0,
+        streak: 1,
+        rank: "Master",
         onboardingComplete: true,
+        createdAt: serverTimestamp(),
       }, { merge: true });
       router.push("/tutor/dashboard");
     } catch (error) {
-      console.error("Error updating profile:", error);
+      console.error("Error saving profile:", error);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -251,10 +257,14 @@ export default function TutorOnboardingPage() {
             ) : (
                 <button
                     type="submit"
-                    disabled={loading}
-                    className="flex-[2] py-4 bg-primary text-white font-black text-xl rounded-base flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all group disabled:opacity-70"
+                    disabled={isSubmitting}
+                    className="flex-[2] py-4 bg-primary text-white font-black text-xl rounded-base flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all group disabled:opacity-50"
                 >
-                    {loading ? "Launching..." : "Launch My Workspace"} <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
+                    {isSubmitting ? (
+                        <><Loader2 className="animate-spin" size={20} /> Launching Workspace...</>
+                    ) : (
+                        <>Launch My Workspace <Sparkles size={20} className="group-hover:rotate-12 transition-transform" /></>
+                    )}
                 </button>
             )}
           </div>

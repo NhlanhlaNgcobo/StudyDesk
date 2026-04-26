@@ -6,11 +6,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { GraduationCap, Landmark, BookOpen, Calendar, ArrowRight, ArrowLeft } from "lucide-react";
+import { GraduationCap, Landmark, BookOpen, Calendar, ArrowRight, ArrowLeft, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 import { auth, db } from "@/lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const universities = ["UCT", "Wits", "UKZN", "UP", "SU", "UJ", "NWU", "RU", "UWC", "UL", "MUT", "DUT", "CPUT", "TUT", "VUT", "UFH", "WSU", "UNIVEN", "SMU", "UZ"];
 
@@ -24,9 +25,10 @@ const studentOnboardingSchema = z.object({
 type OnboardingForm = z.infer<typeof studentOnboardingSchema>;
 
 export default function StudentOnboardingPage() {
-  const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { user } = useAuth();
+  const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const {
     register,
     handleSubmit,
@@ -35,7 +37,7 @@ export default function StudentOnboardingPage() {
     formState: { errors },
   } = useForm<OnboardingForm>({
     resolver: zodResolver(studentOnboardingSchema),
-    defaultValues: { fullName: "Nhlanhla Ngcobo" }
+    defaultValues: { fullName: user?.displayName || "" }
   });
 
   const selectedUniv = watch("university");
@@ -45,26 +47,30 @@ export default function StudentOnboardingPage() {
   const filteredUnivs = universities.filter(u => u.toLowerCase().includes(query.toLowerCase()));
 
   const onSubmit = async (data: OnboardingForm) => {
-    if (!auth.currentUser) {
-      console.error("No authenticated user found");
-      return;
-    }
-    setLoading(true);
+    if (!user) return;
+    setIsSubmitting(true);
     try {
-      const userRef = doc(db, "users", auth.currentUser.uid);
-      await setDoc(userRef, {
-        role: "student",
+      await setDoc(doc(db, "users", user.uid), {
+        id: user.uid,
+        name: data.fullName,
+        fullName: data.fullName,
+        email: user.email,
         university: data.university,
         degree: data.degree,
         year: data.year,
-        fullName: data.fullName,
+        role: "student",
+        tier: "Premium Student",
+        points: 0,
+        streak: 1,
+        rank: "Scholar",
         onboardingComplete: true,
+        createdAt: serverTimestamp(),
       }, { merge: true });
-      router.push("/student/ai-tutor");
+      router.push("/student/dashboard");
     } catch (error) {
-      console.error("Error updating profile:", error);
+      console.error("Error saving profile:", error);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -248,10 +254,14 @@ export default function StudentOnboardingPage() {
             ) : (
                 <button
                     type="submit"
-                    disabled={loading}
-                    className="flex-[2] py-4 bg-primary text-white font-black text-lg rounded-base flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/20 active:scale-95 transition-all text-xl disabled:opacity-70"
+                    disabled={isSubmitting}
+                    className="flex-[2] py-4 bg-primary text-white font-black text-lg rounded-base flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/20 active:scale-95 transition-all text-xl disabled:opacity-50"
                 >
-                    {loading ? "Preparing Desk..." : "Enter My Desk"} <ArrowRight size={20} />
+                    {isSubmitting ? (
+                        <><Loader2 className="animate-spin" size={20} /> Entering Desk...</>
+                    ) : (
+                        <>Enter My Desk <ArrowRight size={20} /></>
+                    )}
                 </button>
             )}
           </div>

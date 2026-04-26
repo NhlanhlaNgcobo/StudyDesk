@@ -6,8 +6,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion } from "framer-motion";
-import { LogIn, Mail, Lock, Zap } from "lucide-react";
+import { LogIn, Mail, Lock, Zap, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signInAnonymously } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 
 const loginSchema = z.object({
@@ -17,13 +21,10 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-import { useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
-import { signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-
 export default function LoginPage() {
   const router = useRouter();
+  const [authError, setAuthError] = useState("");
+  const [loadingDemo, setLoadingDemo] = useState(false);
   const {
     register,
     handleSubmit,
@@ -31,9 +32,6 @@ export default function LoginPage() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   });
-
-  const [authError, setAuthError] = useState("");
-  const [loadingDemo, setLoadingDemo] = useState(false);
 
   // Auto-redirect if already logged in
   useEffect(() => {
@@ -49,6 +47,17 @@ export default function LoginPage() {
     return () => unsub();
   }, [router]);
 
+  const getFirebaseErrorMessage = (code: string) => {
+    switch (code) {
+      case "auth/user-not-found": return "No account found with this email.";
+      case "auth/wrong-password": return "Incorrect password. Please try again.";
+      case "auth/invalid-credential": return "Invalid credentials. Please check your email and password.";
+      case "auth/too-many-requests": return "Too many failed attempts. Please wait and try again.";
+      case "auth/user-disabled": return "This account has been disabled.";
+      default: return "An unexpected error occurred. Please try again.";
+    }
+  };
+
   const onSubmit = async (data: LoginForm) => {
     setAuthError("");
     try {
@@ -58,9 +67,27 @@ export default function LoginPage() {
       if (role === "tutor") router.push("/tutor/dashboard");
       else if (role === "student") router.push("/student/dashboard");
       else router.push("/role-select");
-    } catch (error: any) {
-      console.error("Login error:", error);
-      setAuthError("Invalid email or password. Please try again.");
+    } catch (err: any) {
+      console.error("Login error:", err);
+      setAuthError(getFirebaseErrorMessage(err.code));
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+    try {
+      const provider = new GoogleAuthProvider();
+      const cred = await signInWithPopup(auth, provider);
+      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      const role = snap.data()?.role;
+      if (role === "tutor") router.push("/tutor/dashboard");
+      else if (role === "student") router.push("/student/dashboard");
+      else router.push("/role-select");
+    } catch (err: any) {
+      console.error("Google login error:", err);
+      if (err.code !== "auth/popup-closed-by-user") {
+        setAuthError(getFirebaseErrorMessage(err.code));
+      }
     }
   };
 
@@ -170,7 +197,13 @@ export default function LoginPage() {
             {errors.password && <p className="text-xs text-red-500 font-bold px-1">{errors.password.message}</p>}
           </div>
 
-            {authError && <p className="text-sm text-red-500 font-bold px-1 text-center bg-red-50 p-2 rounded-md">{authError}</p>}
+          {authError && (
+            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-base">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-red-600 font-bold">{authError}</p>
+            </div>
+          )}
+          
           <button
             type="submit"
             disabled={isSubmitting}
@@ -179,7 +212,6 @@ export default function LoginPage() {
             {isSubmitting ? "Logging in..." : "Login"}
             {!isSubmitting && <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />}
           </button>
-
         </form>
 
          <div className="relative py-4">
@@ -189,7 +221,11 @@ export default function LoginPage() {
             </div>
          </div>
 
-        <button className="w-full py-4 border-2 border-slate-100 dark:border-slate-800 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-slate-900 dark:text-white">
+        <button 
+           type="button"
+           onClick={handleGoogleLogin}
+           className="w-full py-4 border-2 border-slate-100 dark:border-slate-800 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-slate-900 dark:text-white"
+        >
            <svg className="w-5 h-5" viewBox="0 0 24 24">
              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
