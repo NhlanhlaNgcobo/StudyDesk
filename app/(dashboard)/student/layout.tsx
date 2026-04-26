@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -27,6 +27,9 @@ import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { AITutorChat } from "@/components/shared/ai-tutor-chat";
 import { PomodoroTimer } from "@/components/shared/pomodoro-timer";
+import { useAuth } from "@/contexts/auth-context";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/student/dashboard" },
@@ -41,13 +44,47 @@ const NAV_ITEMS = [
 ];
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+  const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { theme, setTheme } = useTheme();
 
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [user, loading, router]);
+
+  // Loading gate — prevents UI flash while Firebase resolves
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-12 h-12 bg-primary rounded-base flex items-center justify-center text-white font-bold text-xl animate-pulse">
+            S
+          </div>
+          <span className="w-6 h-6 border-4 border-slate-200 dark:border-slate-700 border-t-primary rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  // Guard — don't render dashboard content if unauthenticated
+  if (!user) return null;
+
   const activeLabel = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label || "Dashboard";
   const isImmersive = pathname.includes("/exams/") || pathname.includes("/quiz/");
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.replace("/login");
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
 
   if (isImmersive) {
     return <div className="min-h-screen bg-[#F8FAFF]">{children}</div>;
@@ -84,12 +121,12 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         {/* User Profile Info */}
         <div className={cn("px-6 py-8 flex flex-col items-center gap-4", collapsed ? "items-center" : "items-start")}>
             <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 text-primary font-black flex items-center justify-center rounded-full text-lg border-2 border-white dark:border-slate-800 shadow-sm">
-                NN
+                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "NN"}
             </div>
             {!collapsed && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-                    <p className="font-black text-sm text-text-primary">Nhlanhla Ngcobo</p>
-                    <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">Premium Student</p>
+                    <p className="font-black text-sm text-text-primary">{profile?.name || "Student"}</p>
+                    <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">{profile?.tier || "Premium Student"}</p>
                 </div>
             )}
         </div>
@@ -158,7 +195,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="w-10 h-10 rounded-full overflow-hidden border-2 border-slate-100 hover:border-primary transition-all flex items-center justify-center bg-blue-50 text-primary font-bold text-sm"
               >
-                NN
+                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "NN"}
               </button>
               
               <AnimatePresence>
@@ -172,21 +209,24 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
                     {[
                       { icon: UserIcon, label: "Profile", href: "/student/settings" },
                       { icon: Settings, label: "Settings", href: "/student/settings" },
-                      { icon: LogOut, label: "Logout", href: "/login", color: "text-red-500" },
                     ].map((item) => (
                       <Link 
                         key={item.label}
                         href={item.href}
                         onClick={() => setShowProfileMenu(false)}
-                        className={cn(
-                            "flex items-center gap-3 px-4 py-3 rounded-base hover:bg-slate-50 dark:hover:bg-slate-800 font-bold transition-colors",
-                            item.color
-                        )}
+                        className="flex items-center gap-3 px-4 py-3 rounded-base hover:bg-slate-50 dark:hover:bg-slate-800 font-bold transition-colors"
                       >
                         <item.icon size={18} />
                         <span>{item.label}</span>
                       </Link>
                     ))}
+                    <button 
+                      onClick={() => { setShowProfileMenu(false); handleLogout(); }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-base hover:bg-slate-50 dark:hover:bg-slate-800 font-bold transition-colors text-red-500 w-full"
+                    >
+                      <LogOut size={18} />
+                      <span>Logout</span>
+                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -199,7 +239,9 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             {children}
         </main>
 
-        <AITutorChat />
+        <AITutorChat 
+          userTier={profile?.tier === "Elite" ? "elite" : profile?.tier === "Premium Student" ? "premium" : "free"}
+        />
         <PomodoroTimer />
 
         {/* Mobile Bottom Bar */}

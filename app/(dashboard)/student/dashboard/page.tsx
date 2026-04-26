@@ -32,6 +32,9 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { DEMO_UPCOMING_SESSIONS, DEMO_MODULES } from "@/lib/mock-data";
+import { useAuth } from "@/contexts/auth-context";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 
 const COLORS = ["#4DA6FF", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#EC4899"];
 const SUBJECTS = ["Science", "Maths", "Humanities", "Law", "Engineering", "Medicine"];
@@ -120,11 +123,48 @@ const ModuleCard = ({ id, name, tags, fileCount, progress, color }: any) => (
 
 export default function StudentDashboard() {
   const router = useRouter();
+  const { user, profile } = useAuth();
   const [showNewModule, setShowNewModule] = useState(false);
   const [moduleName, setModuleName] = useState("");
   const [selectedSubject, setSelectedSubject] = useState("Engineering");
   const [selectedColor, setSelectedColor] = useState("#4DA6FF");
   const [generating, setGenerating] = useState<string | null>(null);
+
+  const [recentNotes, setRecentNotes] = useState<any[]>([]);
+  const [totalGenerated, setTotalGenerated] = useState(0);
+  const [dataLoading, setDataLoading] = useState(true);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const fetchDashboardData = async () => {
+      try {
+        const q = query(
+          collection(db, "notes"), 
+          where("userId", "==", user.uid),
+          orderBy("createdAt", "desc")
+        );
+        const querySnapshot = await getDocs(q);
+        const fetchedNotes = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setRecentNotes(fetchedNotes.slice(0, 3));
+        setTotalGenerated(fetchedNotes.length);
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err);
+      } finally {
+        setDataLoading(false);
+      }
+    };
+    fetchDashboardData();
+  }, [user]);
+
+  const dynamicMetrics = [
+    { label: "Modules Created", value: 0, icon: Layers, color: "text-blue-500", bg: "bg-blue-50" },
+    { label: "Notes Generated", value: totalGenerated, icon: FileText, color: "text-purple-500", bg: "bg-purple-50" },
+    { label: "Quizzes Taken", value: 0, icon: Brain, color: "text-orange-500", bg: "bg-orange-50" },
+    { label: "Hours Studied", value: 0, icon: Clock, color: "text-emerald-500", bg: "bg-emerald-50" },
+  ];
 
   const now = new Date();
   const hour = now.getHours();
@@ -145,14 +185,14 @@ export default function StudentDashboard() {
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight italic decoration-primary decoration-4 underline">
-             {greeting}, Nhlanhla
+             {greeting}, {profile?.name?.split(' ')[0] || "Student"}
           </h1>
           <div className="flex items-center gap-4 mt-3 text-slate-600 dark:text-slate-300 font-bold">
              <Calendar size={18} className="text-primary" />
              <span>{dateStr}</span>
              <span className="w-1.5 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
              <div className="flex items-center gap-1.5 px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full text-xs font-black uppercase tracking-widest">
-                <Flame size={14} /> 7 Day Streak
+                <Flame size={14} /> {profile?.streak || 1} Day Streak
              </div>
           </div>
         </div>
@@ -167,7 +207,7 @@ export default function StudentDashboard() {
 
       {/* Metrics Row */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {METRICS.map(metric => <MetricCard key={metric.label} {...metric} />)}
+        {dynamicMetrics.map(metric => <MetricCard key={metric.label} {...metric} />)}
       </section>
 
       {/* Main Grid */}
@@ -176,85 +216,131 @@ export default function StudentDashboard() {
         {/* Modules & Activity */}
         <div className="lg:col-span-2 space-y-12">
             
-            {/* Quick Actions */}
-            <section className="space-y-6">
-                <h2 className="text-2xl font-black tracking-tight">Quick Actions</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                   <button
-                     onClick={() => handleQuickAction("/student/notes", "notes")}
-                     className="p-8 bg-blue-100/50 dark:bg-blue-900/10 border-2 border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-blue-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
-                   >
-                     {generating === "notes" && <div className="absolute inset-0 flex items-center justify-center bg-blue-50/80"><span className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>}
-                     <div className="w-14 h-14 bg-white dark:bg-slate-900 text-blue-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><FileText size={28} /></div>
-                     <span className="font-extrabold text-blue-600 tracking-tight">Generate Notes</span>
-                   </button>
-                   <button
-                     onClick={() => handleQuickAction("/student/quiz", "quiz")}
-                     className="p-8 bg-purple-100/50 dark:bg-purple-900/10 border-2 border-purple-100 dark:border-purple-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-purple-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
-                   >
-                     {generating === "quiz" && <div className="absolute inset-0 flex items-center justify-center bg-purple-50/80"><span className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>}
-                     <div className="w-14 h-14 bg-white dark:bg-slate-900 text-purple-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Brain size={28} /></div>
-                     <span className="font-extrabold text-purple-600 tracking-tight">Practice Quiz</span>
-                   </button>
-                   <button
-                     onClick={() => handleQuickAction("/student/exams", "exams")}
-                     className="p-8 bg-emerald-100/50 dark:bg-emerald-900/10 border-2 border-emerald-100 dark:border-emerald-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-emerald-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
-                   >
-                     {generating === "exams" && <div className="absolute inset-0 flex items-center justify-center bg-emerald-50/80"><span className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>}
-                     <div className="w-14 h-14 bg-white dark:bg-slate-900 text-emerald-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Zap size={28} /></div>
-                     <span className="font-extrabold text-emerald-600 tracking-tight text-balance">Launch Mock Exam</span>
-                   </button>
-                </div>
-            </section>
-
-            {/* Recent Modules */}
-            <section className="space-y-6">
-                <div className="flex justify-between items-center px-1">
-                   <h2 className="text-2xl font-black tracking-tight">Recent Modules</h2>
-                   <Link href="/student/modules" className="text-primary font-black uppercase text-[11px] tracking-widest flex items-center gap-2 hover:translate-x-2 transition-transform bg-primary/5 px-3 py-1.5 rounded-full">See All <ArrowRight size={16}/></Link>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                   {RECENT_MODULES.map(m => <ModuleCard key={m.id} {...m} />)}
-                </div>
-            </section>
-
-            {/* Weekly Activity */}
-            <section className="space-y-6">
-                <div className="flex justify-between items-center px-1">
-                    <h2 className="text-2xl font-black tracking-tight">Weekly Activity</h2>
-                    <div className="flex items-center gap-2 text-emerald-500 font-bold text-sm bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-widest leading-none">
-                        <TrendingUp size={14} /> +12% vs Last Week
+            {dataLoading ? (
+               <div className="h-[500px] flex items-center justify-center bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 flex-1">
+                   <div className="flex flex-col items-center gap-6">
+                       <span className="w-10 h-10 border-4 border-slate-200 dark:border-slate-800 border-t-primary rounded-full animate-spin" />
+                       <p className="text-xs font-black text-slate-500 uppercase tracking-widest animate-pulse">Syncing Databank...</p>
+                   </div>
+               </div>
+            ) : totalGenerated === 0 ? (
+               <div className="h-[500px] bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl p-16 flex flex-col items-center justify-center text-center shadow-sm">
+                    <div className="w-24 h-24 bg-primary/5 text-primary rounded-full flex items-center justify-center mb-8 border-4 border-white dark:border-slate-900 shadow-xl">
+                         <FileText size={48} />
                     </div>
-                </div>
-                <div className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm h-[320px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={WEEKLY_ACTIVITY}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                            <XAxis 
-                                dataKey="day" 
-                                axisLine={false} 
-                                tickLine={false} 
-                                tick={{ fontSize: 12, fontWeight: 900, fill: "#94A3B8" }}
-                                dy={10}
-                            />
-                            <YAxis 
-                                axisLine={false} 
-                                tickLine={false} 
-                                tick={{ fontSize: 12, fontWeight: 900, fill: "#94A3B8" }}
-                            />
-                            <Tooltip 
-                                cursor={{ fill: '#F8FAFF' }}
-                                contentStyle={{ borderRadius: '12px', border: 'none', fontWeight: 900, boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
-                            />
-                            <Bar dataKey="hours" radius={[8, 8, 0, 0]} barSize={40}>
-                                {WEEKLY_ACTIVITY.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={index === 3 ? "#4DA6FF" : "#CBD5E1"} />
-                                ))}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </section>
+                    <h3 className="text-3xl font-extrabold mb-3 tracking-tight">Your Databank is Empty</h3>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium max-w-md mb-10 leading-relaxed text-sm">
+                       Upload your study materials, lecture slides, and PDF readings to begin generating smart study notes, quizzes, and exams.
+                    </p>
+                    <Link href="/student/modules" className="px-8 py-4 bg-primary text-white font-black uppercase text-xs tracking-widest rounded-base hover:shadow-xl hover:shadow-primary/30 active:scale-95 transition-all flex items-center gap-3">
+                       <Plus size={18} /> Upload First Document
+                    </Link>
+               </div>
+            ) : (
+                <>
+                    {/* Quick Actions */}
+                    <section className="space-y-6">
+                        <h2 className="text-2xl font-black tracking-tight">Quick Actions</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                           <button
+                             onClick={() => handleQuickAction("/student/notes", "notes")}
+                             className="p-8 bg-blue-100/50 dark:bg-blue-900/10 border-2 border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-blue-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                           >
+                             {generating === "notes" && <div className="absolute inset-0 flex items-center justify-center bg-blue-50/80"><span className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>}
+                             <div className="w-14 h-14 bg-white dark:bg-slate-900 text-blue-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><FileText size={28} /></div>
+                             <span className="font-extrabold text-blue-600 tracking-tight">Generate Notes</span>
+                           </button>
+                           <button
+                             onClick={() => handleQuickAction("/student/quiz", "quiz")}
+                             className="p-8 bg-purple-100/50 dark:bg-purple-900/10 border-2 border-purple-100 dark:border-purple-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-purple-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                           >
+                             {generating === "quiz" && <div className="absolute inset-0 flex items-center justify-center bg-purple-50/80"><span className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>}
+                             <div className="w-14 h-14 bg-white dark:bg-slate-900 text-purple-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Brain size={28} /></div>
+                             <span className="font-extrabold text-purple-600 tracking-tight">Practice Quiz</span>
+                           </button>
+                           <button
+                             onClick={() => handleQuickAction("/student/exams", "exams")}
+                             className="p-8 bg-emerald-100/50 dark:bg-emerald-900/10 border-2 border-emerald-100 dark:border-emerald-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-emerald-100 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                           >
+                             {generating === "exams" && <div className="absolute inset-0 flex items-center justify-center bg-emerald-50/80"><span className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>}
+                             <div className="w-14 h-14 bg-white dark:bg-slate-900 text-emerald-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><Zap size={28} /></div>
+                             <span className="font-extrabold text-emerald-600 tracking-tight text-balance">Launch Mock Exam</span>
+                           </button>
+                        </div>
+                    </section>
+
+                    {/* Recent Notes Grid */}
+                    <section className="space-y-6">
+                        <div className="flex justify-between items-center px-1">
+                           <h2 className="text-2xl font-black tracking-tight">Recent Notes</h2>
+                           <Link href="/student/notes" className="text-primary font-black uppercase text-[11px] tracking-widest flex items-center gap-2 hover:translate-x-2 transition-transform bg-primary/5 px-3 py-1.5 rounded-full">See All <ArrowRight size={16}/></Link>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                           {recentNotes.map((note, idx) => (
+                             <div key={note.id} className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col gap-6 group hover:shadow-xl hover:shadow-slate-200/50 hover:border-primary/50 transition-all h-full">
+                               <div className="flex justify-between items-start">
+                                 <div className={cn("px-3 py-1 font-black text-[10px] uppercase tracking-widest text-white rounded-full", ["bg-blue-500", "bg-purple-500", "bg-emerald-500"][idx % 3])}>
+                                   Module {note.moduleId}
+                                 </div>
+                                 <button className="text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                   <MoreVertical size={20} />
+                                 </button>
+                               </div>
+                               
+                               <div className="flex-1">
+                                 <h3 className="text-lg font-extrabold mb-2 tracking-tight group-hover:text-primary transition-colors line-clamp-1">AI Study Guide</h3>
+                                 <p className="text-xs font-medium text-text-secondary line-clamp-3 leading-relaxed">
+                                   {note.content ? note.content.slice(0, 100) + "..." : "No preview available"}
+                                 </p>
+                               </div>
+
+                               <Link href={`/student/notes`} className="w-full py-4 mt-2 bg-slate-50 dark:bg-slate-800 rounded-base font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-primary hover:text-white transition-all shadow-sm text-center">
+                                  Review <Play size={14} fill="currentColor" />
+                               </Link>
+                             </div>
+                           ))}
+                        </div>
+                    </section>
+
+                    {/* Weekly Activity */}
+                    <section className="space-y-6">
+                        <div className="flex justify-between items-center px-1">
+                            <h2 className="text-2xl font-black tracking-tight">Weekly Activity</h2>
+                            <div className="flex items-center gap-2 text-emerald-500 font-bold text-sm bg-emerald-50 px-3 py-1 rounded-full uppercase tracking-widest leading-none">
+                                <TrendingUp size={14} /> +12% vs Last Week
+                            </div>
+                        </div>
+                        <div className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm h-[320px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={WEEKLY_ACTIVITY}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                                    <XAxis 
+                                        dataKey="day" 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        tick={{ fontSize: 12, fontWeight: 900, fill: "#94A3B8" }}
+                                        dy={10}
+                                    />
+                                    <YAxis 
+                                        axisLine={false} 
+                                        tickLine={false} 
+                                        tick={{ fontSize: 12, fontWeight: 900, fill: "#94A3B8" }}
+                                    />
+                                    <Tooltip 
+                                        cursor={{ fill: '#F8FAFF' }}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', fontWeight: 900, boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                    <Bar dataKey="hours" radius={[8, 8, 0, 0]} barSize={40}>
+                                        {WEEKLY_ACTIVITY.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={index === 3 ? "#4DA6FF" : "#CBD5E1"} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </section>
+                </>
+            )}
         </div>
 
         {/* Sidebar Widgets - Upcoming & Progress */}
@@ -265,10 +351,12 @@ export default function StudentDashboard() {
                     <p className="text-slate-400 font-medium leading-relaxed">You've mastered <span className="text-white font-black">65%</span> of your syllabus. Complete 2 more quizzes to unlock the <span className="text-primary font-black">Elite Student</span> badge.</p>
                  </div>
                  <div className="relative z-10 p-6 bg-white/5 border border-white/10 rounded-base flex items-center gap-6 group hover:bg-white/10 transition-colors">
-                    <div className="w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center font-black text-xl shadow-lg ring-4 ring-primary/20 group-hover:scale-110 transition-transform">S</div>
+                    <div className="w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center font-black text-xl shadow-lg ring-4 ring-primary/20 group-hover:scale-110 transition-transform">
+                        {profile?.name?.[0] || "S"}
+                    </div>
                     <div>
-                        <p className="font-black text-lg tracking-tight leading-tight mb-1">Scholar Tier</p>
-                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">1,250 Points gained</p>
+                        <p className="font-black text-lg tracking-tight leading-tight mb-1">{profile?.rank || "Scholar"} Tier</p>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{profile?.points || 0} Points gained</p>
                     </div>
                  </div>
                  <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-primary opacity-20 blur-[80px]" />

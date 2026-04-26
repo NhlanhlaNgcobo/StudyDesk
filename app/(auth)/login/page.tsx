@@ -1,13 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion } from "framer-motion";
-import { LogIn, Mail, Lock, Zap } from "lucide-react";
+import { LogIn, Mail, Lock, Zap, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -16,10 +19,9 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-import { useRouter } from "next/navigation";
-
 export default function LoginPage() {
   const router = useRouter();
+  const [authError, setAuthError] = useState("");
   const {
     register,
     handleSubmit,
@@ -28,10 +30,40 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  const onSubmit = (data: LoginForm) => {
-    console.log("Login submitted:", data);
-    // Mock login redirect
-    router.push("/student/dashboard");
+  const getFirebaseErrorMessage = (code: string) => {
+    switch (code) {
+      case "auth/user-not-found": return "No account found with this email.";
+      case "auth/wrong-password": return "Incorrect password. Please try again.";
+      case "auth/invalid-credential": return "Invalid credentials. Please check your email and password.";
+      case "auth/too-many-requests": return "Too many failed attempts. Please wait and try again.";
+      case "auth/user-disabled": return "This account has been disabled.";
+      default: return "An unexpected error occurred. Please try again.";
+    }
+  };
+
+  const onSubmit = async (data: LoginForm) => {
+    setAuthError("");
+    try {
+      await signInWithEmailAndPassword(auth, data.email, data.password);
+      router.push("/student/dashboard");
+    } catch (err: any) {
+      console.error("Login error:", err);
+      setAuthError(getFirebaseErrorMessage(err.code));
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setAuthError("");
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      router.push("/student/dashboard");
+    } catch (err: any) {
+      console.error("Google login error:", err);
+      if (err.code !== "auth/popup-closed-by-user") {
+        setAuthError(getFirebaseErrorMessage(err.code));
+      }
+    }
   };
 
   return (
@@ -99,17 +131,12 @@ export default function LoginPage() {
             {!isSubmitting && <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />}
           </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              // Pre-fill and submit or just redirect
-              router.push("/student/dashboard");
-            }}
-            className="w-full py-4 bg-slate-900 text-white font-bold rounded-base text-lg hover:shadow-xl hover:bg-black transition-all flex items-center justify-center gap-2 group border-0 outline-none active:scale-95 shadow-lg"
-          >
-            Login with Demo Account
-            <Zap size={20} className="text-primary group-hover:scale-125 transition-transform" fill="currentColor" />
-          </button>
+          {authError && (
+            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-100 rounded-base">
+              <AlertCircle size={18} className="text-red-500 mt-0.5 shrink-0" />
+              <p className="text-sm text-red-600 font-bold">{authError}</p>
+            </div>
+          )}
         </form>
 
          <div className="relative py-4">
@@ -119,7 +146,11 @@ export default function LoginPage() {
             </div>
          </div>
 
-        <button className="w-full py-4 border-2 border-slate-100 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all">
+        <button 
+           type="button"
+           onClick={handleGoogleLogin}
+           className="w-full py-4 border-2 border-slate-100 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 transition-all"
+        >
            <svg className="w-5 h-5" viewBox="0 0 24 24">
              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>

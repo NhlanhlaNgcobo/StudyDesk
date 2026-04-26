@@ -3,6 +3,7 @@ import { Outfit } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/shared/theme-provider";
 import { PricingProvider } from "@/contexts/pricing-context";
+import { AuthProvider } from "@/contexts/auth-context";
 
 const outfit = Outfit({ 
   subsets: ["latin"],
@@ -29,7 +30,9 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <PricingProvider>
-            {children}
+            <AuthProvider>
+              {children}
+            </AuthProvider>
           </PricingProvider>
         </ThemeProvider>
       </body>

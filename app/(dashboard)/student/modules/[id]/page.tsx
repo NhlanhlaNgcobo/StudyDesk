@@ -22,10 +22,18 @@ import {
   HelpCircle,
   BrainCircuit,
   Timer,
-  BookOpen
+  BookOpen,
+  Filter,
+  CheckCircle,
+  Cloud
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { DocumentUploader } from "@/components/shared/document-uploader";
+import { useParams } from "next/navigation";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { useAuth } from "@/contexts/auth-context";
 
 // --- Mock Data ---
 
@@ -87,8 +95,112 @@ const GenerationButton = ({ icon: Icon, label, variant = "outline" }: any) => {
   );
 };
 
+type ProcessState = "idle" | "extracting" | "generating" | "complete" | "error";
+
 export default function ModuleDetailPage() {
+  const { user } = useAuth();
+  const params = useParams();
+  const moduleId = (params?.id as string) || "1";
+
   const [activeTab, setActiveTab] = useState("Materials");
+  const [processState, setProcessState] = useState<ProcessState>("idle");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [generatedNotes, setGeneratedNotes] = useState("");
+
+  const handleUploadComplete = async (secure_url: string) => {
+    setProcessState("extracting");
+    setSaveStatus("idle");
+    setErrorMessage("");
+
+    try {
+      const extractRes = await fetch("/api/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl: secure_url }),
+      });
+
+      if (!extractRes.ok) {
+        const err = await extractRes.json();
+        throw new Error(err.error || "Failed to extract text from document");
+      }
+
+      const { text } = await extractRes.json();
+
+      setProcessState("generating");
+      setGeneratedNotes("");
+
+      const chatRes = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: [
+            {
+              role: "user",
+              content: `Please generate comprehensive and structured study notes from the following text extracted from a lecture PDF. Organize it well with headers, bullet points, and key takeaways.\n\nSOURCE TEXT:\n${text}`
+            }
+          ],
+          options: {}
+        }),
+      });
+
+      if (!chatRes.ok) throw new Error("Failed to initialize generation stream");
+      if (!chatRes.body) throw new Error("No response body in stream");
+
+      const reader = chatRes.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let finalNotes = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+        for (const line of lines) {
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.delta) {
+                 finalNotes += data.delta;
+                 setGeneratedNotes(finalNotes);
+              }
+              if (data.error) throw new Error(data.error);
+            } catch (e) {
+              // Ignore parsing errors for incomplete chunks
+            }
+          }
+        }
+      }
+      setProcessState("complete");
+      setSaveStatus("saving");
+
+      if (!user) {
+        setProcessState("error");
+        setSaveStatus("error");
+        setErrorMessage("Authentication failed. Cannot save notes to cloud.");
+        return;
+      }
+
+      addDoc(collection(db, "notes"), {
+        userId: user.uid,
+        moduleId,
+        content: finalNotes,
+        sourceDocumentUrl: secure_url,
+        createdAt: serverTimestamp()
+      }).then(() => {
+        setSaveStatus("saved");
+      }).catch((err) => {
+        console.error("Firestore save error:", err);
+        setSaveStatus("error");
+      });
+
+    } catch(err: any) {
+      console.error(err);
+      setErrorMessage(err.message || "An error occurred during processing.");
+      setProcessState("error");
+    }
+  };
 
   return (
     <div className="space-y-12 animate-in fade-in duration-500">
@@ -166,36 +278,148 @@ export default function ModuleDetailPage() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-12"
             >
-                {/* PDF Drag & Drop */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                    <div className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-center py-20 group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer shadow-sm">
-                        <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                            <Upload size={36} />
-                        </div>
-                        <h3 className="text-2xl font-black mb-2 tracking-tight">Drop your PDFs here</h3>
-                        <p className="text-text-secondary font-medium max-w-xs mx-auto">Upload lecture notes, slides, or chapters to start generating AI study kits.</p>
-                        <button className="mt-8 px-6 py-3 bg-white border border-slate-100 rounded-base font-black uppercase text-xs tracking-widest shadow-lg shadow-slate-200/20 group-hover:bg-primary group-hover:text-white transition-all">Browse Local Files</button>
+                {/* PDF Drag & Drop & Processing Engine */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start min-h-[400px]">
+                    <div className="relative h-full flex flex-col">
+                        <AnimatePresence mode="wait">
+                            {processState === "idle" && (
+                                <motion.div key="idle" initial={{ opacity: 0}} animate={{opacity: 1}} exit={{opacity: 0}} className="h-full flex-1 flex">
+                                    <DocumentUploader onUploadComplete={handleUploadComplete} className="flex-1" />
+                                </motion.div>
+                            )}
+
+                            {(processState === "extracting" || processState === "generating") && (
+                                <motion.div 
+                                    key="processing" 
+                                    initial={{ opacity: 0, scale: 0.95 }} 
+                                    animate={{ opacity: 1, scale: 1 }} 
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm h-full flex-1"
+                                >
+                                    <div className="w-24 h-24 relative mb-8">
+                                        <motion.div 
+                                            animate={{ rotate: 360 }} 
+                                            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                                            className="absolute inset-0 rounded-full border-4 border-slate-100 dark:border-slate-800 border-t-primary"
+                                        />
+                                        <div className="absolute inset-0 flex items-center justify-center text-primary">
+                                            {processState === "extracting" ? <FileText size={32} /> : <BrainCircuit size={32} />}
+                                        </div>
+                                    </div>
+                                    <h3 className="text-2xl font-black mb-2 tracking-tight">
+                                        {processState === "extracting" ? "Extracting Text" : "Generating Notes"}
+                                    </h3>
+                                    <p className="text-sm font-bold text-slate-500 max-w-xs mx-auto">
+                                        {processState === "extracting" 
+                                           ? "Parsing the document via secure server to retrieve raw text."
+                                           : "The AI is structuring key concepts, definitions, and formatting notes..."}
+                                    </p>
+                                </motion.div>
+                            )}
+
+                            {processState === "error" && (
+                                <motion.div 
+                                    key="error"
+                                    initial={{ opacity: 0, scale: 0.95 }} 
+                                    animate={{ opacity: 1, scale: 1 }} 
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                    className="bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/30 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm h-full flex-1"
+                                >
+                                    <div className="w-20 h-20 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mb-6">
+                                        <ShieldAlert size={36} />
+                                    </div>
+                                    <h3 className="text-2xl font-black mb-2 tracking-tight text-red-600 dark:text-red-400">Processing Failed</h3>
+                                    <p className="text-sm text-red-600/80 dark:text-red-300/80 mb-8 max-w-sm font-medium leading-relaxed">{errorMessage}</p>
+                                    <button 
+                                        onClick={() => setProcessState("idle")}
+                                        className="px-8 py-4 bg-white dark:bg-slate-800 border-2 border-red-100 dark:border-red-900/50 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-700 dark:text-red-400 rounded-base font-black uppercase text-xs tracking-widest transition-all shadow-sm"
+                                    >
+                                        Try Again
+                                    </button>
+                                </motion.div>
+                            )}
+
+                            {processState === "complete" && (
+                                <motion.div 
+                                    key="complete"
+                                    initial={{ opacity: 0, scale: 0.95 }} 
+                                    animate={{ opacity: 1, scale: 1 }} 
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                    className="bg-white dark:bg-slate-900 border border-green-200 dark:border-green-900/30 rounded-xl p-10 flex flex-col items-center justify-center text-center shadow-sm h-full flex-1"
+                                >
+                                    <div className="w-20 h-20 bg-green-50 dark:bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mb-6">
+                                        <CheckCircle size={36} />
+                                    </div>
+                                    <h3 className="text-2xl font-black mb-2 tracking-tight text-green-600 dark:text-green-400">Notes Generated!</h3>
+                                    <p className="text-sm text-green-600/80 dark:text-green-400/80 mb-8 font-medium">Your study materials are ready for review.</p>
+                                    <button 
+                                        onClick={() => { setProcessState("idle"); setGeneratedNotes(""); }}
+                                        className="px-8 py-4 bg-white dark:bg-slate-800 border-2 border-green-100 dark:border-green-900/50 hover:bg-green-50 dark:hover:bg-green-900/20 text-green-700 dark:text-green-400 rounded-base font-black uppercase text-xs tracking-widest transition-all shadow-sm"
+                                    >
+                                        Upload Another
+                                    </button>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
-                    <div className="space-y-6">
-                        <h2 className="text-2xl font-black tracking-tight">Generate Power-ups</h2>
-                        <p className="text-text-secondary font-bold">Pick an output Format to begin AI processing.</p>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <GenerationButton icon={FileText} label="Generate Notes" variant="primary" />
-                            <GenerationButton icon={BrainCircuit} label="Generate Quiz" />
-                            <GenerationButton icon={Timer} label="Generate Exam" />
-                            <GenerationButton icon={PlusCircle} label="Generate Flashcards" />
-                        </div>
+                    <div className="space-y-6 h-full flex flex-col">
+                        {processState === "idle" || processState === "extracting" ? (
+                            <>
+                                <h2 className="text-2xl font-black tracking-tight">Generate Power-ups</h2>
+                                <p className="text-text-secondary font-bold">Pick an output Format to begin AI processing.</p>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <GenerationButton icon={FileText} label="Generate Notes" variant="primary" />
+                                    <GenerationButton icon={BrainCircuit} label="Generate Quiz" />
+                                    <GenerationButton icon={Timer} label="Generate Exam" />
+                                    <GenerationButton icon={PlusCircle} label="Generate Flashcards" />
+                                </div>
 
-                        {/* Science Badge Wrapper */}
-                        <div className="p-6 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl flex items-start gap-4">
-                            <div className="mt-1 text-primary shrink-0"><ShieldAlert size={20} /></div>
-                            <div>
-                                <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-2 italic">LaTeX Detectors ON</h4>
-                                <p className="text-xs text-slate-600 font-medium leading-relaxed">Our AI detected high-density mathematical notation in this module. Notes and quizzes will include perfectly formatted LaTeX equations.</p>
+                                {/* Science Badge Wrapper */}
+                                <div className="p-6 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl flex items-start gap-4">
+                                    <div className="mt-1 text-primary shrink-0"><ShieldAlert size={20} /></div>
+                                    <div>
+                                        <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-2 italic">LaTeX Detectors ON</h4>
+                                        <p className="text-xs text-slate-600 font-medium leading-relaxed">Our AI detected high-density mathematical notation in this module. Notes and quizzes will include perfectly formatted LaTeX equations.</p>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 shadow-sm flex-1 flex flex-col min-h-[400px]">
+                                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+                                    <h3 className="text-lg font-black flex items-center gap-3">
+                                        <span className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center"><FileText size={16} /></span>
+                                        Generated Notes
+                                    </h3>
+                                    {processState === "generating" && (
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-primary animate-pulse flex items-center gap-2 bg-primary/5 px-3 py-1.5 rounded-full border border-primary/20">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-primary relative"><span className="absolute inset-0 rounded-full animate-ping bg-primary"/></span>
+                                            Synthesizing...
+                                        </span>
+                                    )}
+                                    {processState === "complete" && saveStatus === "saving" && (
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700">
+                                            <Cloud className="animate-pulse" size={14} />
+                                            Saving to Cloud
+                                        </span>
+                                    )}
+                                    {processState === "complete" && saveStatus === "saved" && (
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-green-500 flex items-center gap-2 bg-green-50 dark:bg-green-500/10 px-3 py-1.5 rounded-full border border-green-200 dark:border-green-500/20">
+                                            <CheckCircle size={14} />
+                                            Saved to Cloud
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex-1 overflow-y-auto no-scrollbar font-medium text-sm leading-8 whitespace-pre-wrap text-slate-700 dark:text-slate-300 antialiased pr-2">
+                                    {generatedNotes || (
+                                        <div className="h-full flex items-center justify-center">
+                                            <span className="w-6 h-6 border-4 border-slate-200 dark:border-slate-700 border-t-primary rounded-full animate-spin" />
+                                        </div>
+                                    )}
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
 

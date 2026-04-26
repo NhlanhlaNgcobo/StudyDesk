@@ -6,8 +6,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Presentation, Landmark, User, Hash, ArrowRight, ArrowLeft, X, Sparkles } from "lucide-react";
+import { Presentation, Landmark, User, Hash, ArrowRight, ArrowLeft, X, Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/auth-context";
+import { db } from "@/lib/firebase";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const tutorOnboardingSchema = z.object({
   fullName: z.string().min(2, "Full name required"),
@@ -19,7 +23,10 @@ const tutorOnboardingSchema = z.object({
 type OnboardingForm = z.infer<typeof tutorOnboardingSchema>;
 
 export default function TutorOnboardingPage() {
+  const router = useRouter();
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const {
@@ -30,7 +37,7 @@ export default function TutorOnboardingPage() {
     formState: { errors },
   } = useForm<OnboardingForm>({
     resolver: zodResolver(tutorOnboardingSchema),
-    defaultValues: { fullName: "Nhlanhla Ngcobo", subjects: [] }
+    defaultValues: { fullName: user?.displayName || "", subjects: [] }
   });
 
   const bioContent = watch("bio", "");
@@ -52,8 +59,30 @@ export default function TutorOnboardingPage() {
 
   const removeTag = (t: string) => setTags(tags.filter(tag => tag !== t));
 
-  const onSubmit = (data: OnboardingForm) => {
-    console.log("Tutor onboarding submitted:", data);
+  const onSubmit = async (data: OnboardingForm) => {
+    if (!user) return;
+    setIsSubmitting(true);
+    try {
+      await setDoc(doc(db, "users", user.uid), {
+        id: user.uid,
+        name: data.fullName,
+        email: user.email,
+        university: data.university,
+        subjects: data.subjects,
+        bio: data.bio,
+        role: "tutor",
+        tier: "Elite",
+        points: 0,
+        streak: 1,
+        rank: "Master",
+        createdAt: serverTimestamp(),
+      });
+      router.push("/tutor/dashboard");
+    } catch (error) {
+      console.error("Error saving profile:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const nextStep = () => setStep(s => Math.min(s + 1, 3));
@@ -226,9 +255,14 @@ export default function TutorOnboardingPage() {
             ) : (
                 <button
                     type="submit"
-                    className="flex-[2] py-4 bg-primary text-white font-black text-xl rounded-base flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all group"
+                    disabled={isSubmitting}
+                    className="flex-[2] py-4 bg-primary text-white font-black text-xl rounded-base flex items-center justify-center gap-2 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all group disabled:opacity-50"
                 >
-                    Launch My Workspace <Sparkles size={20} className="group-hover:rotate-12 transition-transform" />
+                    {isSubmitting ? (
+                        <><Loader2 className="animate-spin" size={20} /> Launching Workspace...</>
+                    ) : (
+                        <>Launch My Workspace <Sparkles size={20} className="group-hover:rotate-12 transition-transform" /></>
+                    )}
                 </button>
             )}
           </div>

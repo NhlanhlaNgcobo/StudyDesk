@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { 
   LayoutDashboard, 
   Users, 
@@ -20,6 +20,9 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/tutor/dashboard" },
@@ -30,10 +33,42 @@ const NAV_ITEMS = [
 ];
 
 export default function TutorLayout({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth();
+  const router = useRouter();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { theme, setTheme } = useTheme();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [user, loading, router]);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.replace("/login");
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-12 h-12 bg-emerald-500 rounded-base flex items-center justify-center text-white font-bold text-xl animate-pulse">
+            S
+          </div>
+          <span className="w-6 h-6 border-4 border-slate-200 dark:border-slate-700 border-t-emerald-500 rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
 
   const activeLabel = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label || "Dashboard";
 
@@ -68,16 +103,16 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         {/* User Profile Info */}
         <div className={cn("px-6 py-8 flex flex-col items-center gap-4", collapsed ? "items-center" : "items-start")}>
             <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 font-black flex items-center justify-center rounded-full text-lg border-2 border-white dark:border-slate-800 shadow-sm relative">
-                TA
+                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "TA"}
                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full" />
             </div>
             {!collapsed && (
                 <div className="animate-in fade-in slide-in-from-top-2 duration-300">
                     <div className="flex items-center gap-2">
-                         <p className="font-black text-sm text-text-primary">Tutor Adams</p>
+                         <p className="font-black text-sm text-text-primary">{profile?.name || "Tutor"}</p>
                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-full text-[8px] font-black uppercase tracking-widest leading-none">Tutor</span>
                     </div>
-                    <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">Official Educator</p>
+                    <p className="text-[10px] uppercase tracking-widest font-black text-text-secondary">{profile?.university || "Official Educator"}</p>
                 </div>
             )}
         </div>
@@ -113,11 +148,11 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
         
         <div className="p-6 border-t mt-auto">
              {!collapsed ? (
-                <button className="w-full py-3 bg-slate-900 dark:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all">
+                <button onClick={handleLogout} className="w-full py-3 bg-slate-900 dark:bg-slate-800 text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center justify-center gap-2 hover:bg-emerald-600 transition-all">
                     <LogOut size={14} /> Power Down
                 </button>
              ) : (
-                <button className="w-full flex justify-center text-slate-400 hover:text-emerald-500 transition-colors"><LogOut size={20}/></button>
+                <button onClick={handleLogout} className="w-full flex justify-center text-slate-400 hover:text-emerald-500 transition-colors"><LogOut size={20}/></button>
              )}
         </div>
       </aside>
@@ -156,7 +191,7 @@ export default function TutorLayout({ children }: { children: React.ReactNode })
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
                 className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-50 hover:border-emerald-500 transition-all flex items-center justify-center bg-emerald-50 text-emerald-600 font-bold text-sm"
               >
-                TA
+                {profile?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || "TA"}
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 /**
  * StudyDesk — Claude AI Integration
- * Brain: Claude Sonnet 4 (standard) | Claude Opus 4 (premium + STEM)
+ * Brain: Claude 3.5 Sonnet (standard) | Claude 3 Opus (premium + STEM)
  */
 
 export type UserTier = "free" | "basic" | "premium" | "elite";
@@ -33,21 +33,18 @@ const STEM_SUBJECTS = [
 
 /**
  * Determine which Claude model to use based on user tier and subject.
- * - Premium / Elite users always get Opus 4
- * - STEM subjects for any paid tier get Opus 4
- * - Everyone else gets Sonnet 4
+ * - Premium / Elite users always get Opus 3
+ * - STEM subjects for any paid tier get Opus 3
+ * - Everyone else gets Sonnet 3.5
  */
 export function selectModel(options: ClaudeOptions): string {
-  const { userTier = "free", subject = "" } = options;
-  const isPremium = userTier === "premium" || userTier === "elite";
-  const isSTEM = STEM_SUBJECTS.some((s) =>
-    subject.toLowerCase().includes(s)
-  );
-
-  if (isPremium || (userTier === "basic" && isSTEM)) {
-    return "claude-opus-4-5";
+  const { userTier = "free" } = options;
+  // In 2026, Elite users get the powerhouse Opus 4.1
+  if (userTier === "elite") {
+    return "claude-opus-4-1-20250805";
   }
-  return "claude-sonnet-4-5";
+  // Standard and Premium users get the blazing fast Sonnet 4
+  return "claude-sonnet-4-20250514";
 }
 
 /**
@@ -112,25 +109,38 @@ export async function streamChatResponse(
 
   if (!reader) throw new Error("No response body");
 
+  let buffer = "";
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
 
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split("\n");
+    buffer += decoder.decode(value, { stream: true });
+    
+    const lines = buffer.split("\n");
+    // Keep the last partial line in the buffer
+    buffer = lines.pop() || "";
 
     for (const line of lines) {
+      if (line.trim() === "") continue;
+      
       if (line.startsWith("data: ")) {
-        const data = line.slice(6);
+        const data = line.slice(6).trim();
         if (data === "[DONE]") {
           onDone();
           return;
         }
+        
         try {
           const parsed = JSON.parse(data);
-          if (parsed.delta) onChunk(parsed.delta);
-        } catch {
-          // ignore parse errors on partial chunks
+          if (parsed.delta) {
+            onChunk(parsed.delta);
+          } else if (parsed.error) {
+            throw new Error(parsed.error);
+          }
+        } catch (e: any) {
+          if (e.message.includes("Unexpected token")) continue; // Partial JSON
+          throw e;
         }
       }
     }

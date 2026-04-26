@@ -37,41 +37,54 @@ export async function POST(req: NextRequest) {
     const systemPrompt = buildSystemPrompt(options || {});
 
     // Stream using the official SDK
+    // Stream using the official SDK
     const encoder = new TextEncoder();
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const anthropicStream = await client.messages.stream({
-            model,
-            max_tokens: options?.maxTokens || 2048,
-            system: systemPrompt,
-            messages: messages.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-          });
+    // Helper to start the stream
+    const startStream = async (controller: ReadableStreamDefaultController, currentModel: string) => {
+      try {
+        console.log("Starting Anthropic stream with model:", currentModel);
+        const anthropicStream = await client.messages.stream({
+          model: currentModel,
+          max_tokens: options?.maxTokens || 2048,
+          system: systemPrompt,
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+        });
 
-          for await (const event of anthropicStream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              const chunk = JSON.stringify({ delta: event.delta.text });
-              controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
-            }
+        for await (const event of anthropicStream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          ) {
+            const chunk = JSON.stringify({ delta: event.delta.text });
+            controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
           }
+        }
 
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        } catch (err: any) {
-          console.error("Stream error:", err);
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      } catch (err: any) {
+        // If the primary model failed and it's a 404, try falling back to Haiku 4.5
+        if (currentModel !== "claude-haiku-4-5-20251001" && err.status === 404) {
+          console.warn(`Model ${currentModel} not found, falling back to Haiku 4.5...`);
+          await startStream(controller, "claude-haiku-4-5-20251001");
+        } else {
+          console.error("Stream error caught in ReadableStream:", err);
           const errChunk = JSON.stringify({
             error: err.message || "Stream failed",
           });
           controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`));
           controller.close();
         }
+      }
+    };
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        await startStream(controller, model);
       },
     });
 
