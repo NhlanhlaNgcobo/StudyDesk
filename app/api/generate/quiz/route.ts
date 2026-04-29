@@ -5,52 +5,90 @@ import { selectModel } from "@/lib/claude";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function cleanJson(text: string) {
+  return text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "Anthropic API key not configured." }, { status: 503 });
   }
 
-  const { topic, subject, numQuestions = 5, difficulty = "Medium", moduleContext, userTier = "free" } = await req.json();
+  const {
+    moduleId,
+    moduleTitle,
+    mode = "quiz",
+    sourceSummary = [],
+    sourceText,
+    questionTypes = ["multiple_choice"],
+    questionCount = 8,
+    difficulty = "Medium",
+    timeLimitMinutes = 20,
+    userTier = "free",
+    subject,
+  } = await req.json();
 
-  if (!topic) {
-    return NextResponse.json({ error: "topic is required" }, { status: 400 });
+  if (!moduleId || !moduleTitle || !sourceText || sourceText.trim().length < 80) {
+    return NextResponse.json(
+      { error: "moduleId, moduleTitle, and sourceText are required." },
+      { status: 400 }
+    );
   }
 
   const client = new Anthropic({ apiKey });
   const model = selectModel({ userTier, subject });
+  const chosenTypes = Array.isArray(questionTypes) && questionTypes.length > 0
+    ? questionTypes
+    : ["multiple_choice"];
 
-  const systemPrompt = `You are StudyDesk AI Tutor — a world-class exam question generator for South African university students.
-You MUST respond with ONLY a valid JSON array. No preamble, no explanation, no markdown fences. Pure JSON only.`;
+  const prompt = `Build a ${mode} grounded strictly in the provided module material.
 
-  const userPrompt = `Generate exactly ${numQuestions} multiple-choice questions about: "${topic}"
-Subject area: ${subject || "General"}
+Module id: ${moduleId}
+Module title: ${moduleTitle}
 Difficulty: ${difficulty}
-${moduleContext ? `Module context: ${moduleContext}` : ""}
+Question count: ${questionCount}
+Time limit: ${timeLimitMinutes} minutes
+Question types: ${chosenTypes.join(", ")}
+Selected sources: ${sourceSummary.join(", ") || "All selected module materials"}
 
-Return a JSON array of objects, each with this exact shape:
+Return only valid JSON with this exact shape:
 {
-  "id": "q1",
-  "text": "Question text here (use $ for inline LaTeX like $x^2$)",
-  "options": ["Option A", "Option B", "Option C", "Option D"],
-  "correctIndex": 0,
-  "explanation": "Why this answer is correct",
-  "topic": "Sub-topic label"
+  "title": "Assessment title",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "multiple_choice | short_form | written | long_form",
+      "prompt": "Question text",
+      "topic": "Topic label",
+      "marks": 4,
+      "options": ["A", "B", "C", "D"],
+      "correctIndex": 0,
+      "correctAnswer": "Correct answer or marking target",
+      "sampleAnswer": "Model answer",
+      "explanation": "Why the answer is correct",
+      "rubricCriteria": ["criterion 1", "criterion 2"]
+    }
+  ]
 }
 
 Rules:
-- correctIndex must be 0, 1, 2, or 3
-- All 4 options must be plausible
-- Explanations must be academically rigorous
-- Use LaTeX notation for math ($formula$)
-- Return ONLY the JSON array, nothing else`;
+- Multiple choice questions must include exactly 4 plausible options
+- Short form, written, and long form questions must include correctAnswer, sampleAnswer, explanation, and rubricCriteria
+- Mix question types intentionally if more than one type is requested
+- Keep all questions faithful to the provided material
+- Do not output markdown fences
+
+Module material:
+${sourceText}`;
 
   try {
     const response = await client.messages.create({
       model,
       max_tokens: 4096,
-      messages: [{ role: "user", content: userPrompt }],
-      system: systemPrompt,
+      system:
+        "You are StudyDesk AI. Return only valid JSON for source-grounded assessments. Never add extra commentary.",
+      messages: [{ role: "user", content: prompt }],
     });
 
     const content = response.content[0];
@@ -58,16 +96,20 @@ Rules:
       throw new Error("Unexpected response type from Claude");
     }
 
-    // Strip any accidental markdown fences
-    const raw = content.text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-    const questions = JSON.parse(raw);
-
-    if (!Array.isArray(questions)) throw new Error("Claude did not return an array");
-
-    return NextResponse.json({ questions, topic, subject, difficulty });
-  } catch (e: any) {
-    console.error("Quiz generation error:", e);
-    return NextResponse.json({ error: e.message || "Failed to generate quiz" }, { status: 500 });
+    const parsed = JSON.parse(cleanJson(content.text));
+    return NextResponse.json({
+      moduleId,
+      title: parsed.title || `${moduleTitle} ${mode === "exam" ? "Mock Exam" : "Practice Quiz"}`,
+      questions: parsed.questions || [],
+      questionTypes: chosenTypes,
+      difficulty,
+      timeLimitMinutes,
+      mode,
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Failed to generate assessment." },
+      { status: 500 }
+    );
   }
 }
-

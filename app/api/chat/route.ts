@@ -5,6 +5,21 @@ import { selectModel, buildSystemPrompt, ClaudeOptions, ChatMessage } from "@/li
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function isModelUnavailable(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const maybeError = error as {
+    status?: number;
+    error?: { error?: { type?: string } };
+    type?: string;
+  };
+
+  return (
+    maybeError.status === 404 ||
+    maybeError.type === "not_found_error" ||
+    maybeError.error?.error?.type === "not_found_error"
+  );
+}
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -33,7 +48,7 @@ export async function POST(req: NextRequest) {
     }
 
     const client = new Anthropic({ apiKey });
-    const model = selectModel(options || {});
+    const preferredModel = selectModel(options || {});
     const systemPrompt = buildSystemPrompt(options || {});
 
     // Stream using the official SDK
@@ -41,7 +56,7 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
-        try {
+        const streamWithModel = async (model: string) => {
           const anthropicStream = await client.messages.stream({
             model,
             max_tokens: options?.maxTokens || 2048,
@@ -51,6 +66,24 @@ export async function POST(req: NextRequest) {
               content: m.content,
             })),
           });
+
+          return anthropicStream;
+        };
+
+        try {
+          let modelUsed = preferredModel;
+          let anthropicStream;
+
+          try {
+            anthropicStream = await streamWithModel(modelUsed);
+          } catch (error) {
+            if (modelUsed !== "claude-sonnet-4-20250514" && isModelUnavailable(error)) {
+              modelUsed = "claude-sonnet-4-20250514";
+              anthropicStream = await streamWithModel(modelUsed);
+            } else {
+              throw error;
+            }
+          }
 
           for await (const event of anthropicStream) {
             if (
@@ -80,7 +113,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
-        "X-Model-Used": model,
+        "X-Model-Used": preferredModel,
       },
     });
   } catch (error: any) {

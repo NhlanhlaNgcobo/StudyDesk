@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
-import { Outfit } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/shared/theme-provider";
 import { PricingProvider } from "@/contexts/pricing-context";
 import { AuthProvider } from "@/components/auth-provider";
-
-const outfit = Outfit({ 
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"]
-});
 
 export const metadata: Metadata = {
   title: "StudyDesk | Your Ultimate Study Companion",
@@ -22,7 +16,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${outfit.className} antialiased text-slate-900 dark:text-slate-100`}>
+      <body className="antialiased text-slate-900 dark:text-slate-100">
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -30,9 +24,7 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            <PricingProvider>
-              {children}
-            </PricingProvider>
+            <PricingProvider>{children}</PricingProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

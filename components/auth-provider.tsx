@@ -1,19 +1,22 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, User, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
+import { auth, db } from "@/lib/firebase";
+import type { AppRole } from "@/lib/app-config";
+import { clearDemoSession, DemoSession, readDemoSession } from "@/lib/demo-session";
 
-interface UserProfile {
+export interface UserProfile {
   uid: string;
   email: string | null;
   displayName: string | null;
-  role?: "student" | "tutor";
+  role?: AppRole;
   university?: string;
   degree?: string;
   onboardingComplete?: boolean;
+  tier?: string;
 }
 
 interface AuthContextType {
@@ -32,6 +35,27 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
 });
 
+function createDemoUser(session: DemoSession): User {
+  return {
+    uid: `demo-${session.role}-user`,
+    email: session.email,
+    displayName: session.name,
+    emailVerified: true,
+    isAnonymous: true,
+  } as User;
+}
+
+function createDemoProfile(session: DemoSession): UserProfile {
+  return {
+    uid: `demo-${session.role}-user`,
+    email: session.email,
+    displayName: session.name,
+    role: session.role,
+    onboardingComplete: true,
+    tier: session.plan,
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -40,64 +64,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // 1. Check for demo mode first (bypass Firebase for accessibility)
-    const demoActive = typeof window !== "undefined" && localStorage.getItem("studydesk_demo_active") === "true";
-    if (demoActive) {
+    const demoSession = readDemoSession();
+    if (demoSession) {
       setIsDemo(true);
-      setProfile({
-        uid: "demo-user-123",
-        email: "demo@studydesk.ac.za",
-        displayName: "Demo Student",
-        role: "student",
-        tier: "Premium Student",
-        onboardingComplete: true
-      } as any);
-      // Create a minimal mock user that looks like a Firebase User
-      setUser({
-        uid: "demo-user-123",
-        email: "demo@studydesk.ac.za",
-        displayName: "Demo Student",
-        emailVerified: true,
-        isAnonymous: true
-      } as any);
+      setUser(createDemoUser(demoSession));
+      setProfile(createDemoProfile(demoSession));
       setLoading(false);
-      return; 
+      return;
     }
 
-    // 2. Fallback to real Firebase Auth
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Load extended profile from Firestore
+
         try {
-          const docRef = doc(db, "users", firebaseUser.uid);
-          const snap = await getDoc(docRef);
+          const snap = await getDoc(doc(db, "users", firebaseUser.uid));
           if (snap.exists()) {
-            setProfile({ uid: firebaseUser.uid, email: firebaseUser.email, displayName: firebaseUser.displayName, ...snap.data() } as UserProfile);
+            setProfile({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+              ...snap.data(),
+            } as UserProfile);
           } else {
-            setProfile({ uid: firebaseUser.uid, email: firebaseUser.email, displayName: firebaseUser.displayName });
+            setProfile({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+            });
           }
         } catch {
-          setProfile({ uid: firebaseUser.uid, email: firebaseUser.email, displayName: firebaseUser.displayName });
+          setProfile({
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            displayName: firebaseUser.displayName,
+          });
         }
       } else {
         setUser(null);
         setProfile(null);
       }
+
       setLoading(false);
     });
+
     return () => unsubscribe();
   }, []);
 
   const logout = async () => {
     if (isDemo) {
-      localStorage.removeItem("studydesk_demo_active");
+      clearDemoSession();
       setIsDemo(false);
       setUser(null);
       setProfile(null);
     } else {
       await signOut(auth);
     }
+
     router.push("/login");
   };
 

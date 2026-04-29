@@ -1,32 +1,47 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/lib/firebase";
+import { demoRoute, persistDemoSession, readDemoSession } from "@/lib/demo-session";
 
-/**
- * AuthGuard — wraps any page/layout that requires an authenticated user.
- * Redirects to /login if the user is not signed in.
- */
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    // Bypass for demo mode
-    if (typeof window !== "undefined" && localStorage.getItem("studydesk_demo_active") === "true") {
+    const params =
+      typeof window === "undefined"
+        ? new URLSearchParams()
+        : new URLSearchParams(window.location.search);
+
+    const isDemoEntry = params.get("demo") === "1";
+    const role = params.get("role") === "tutor" ? "tutor" : "student";
+
+    if (isDemoEntry) {
+      persistDemoSession(role);
+      return;
+    }
+
+    if (readDemoSession()) {
       return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (!user) {
-        // Not logged in — redirect to login with a return path
-        router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+        const fallback = pathname.startsWith("/tutor")
+          ? demoRoute("tutor")
+          : demoRoute("student");
+
+        router.replace(
+          `/login?redirect=${encodeURIComponent(pathname)}&demoRedirect=${encodeURIComponent(fallback)}`
+        );
       }
     });
+
     return () => unsubscribe();
-  }, [router, pathname]);
+  }, [pathname, router]);
 
   return <>{children}</>;
 }

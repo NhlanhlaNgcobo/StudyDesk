@@ -426,7 +426,7 @@ export function AITutorChat({
                           )}
                         >
                           {msg.role === "user" ? (
-                            <p className="font-medium">{msg.content}</p>
+                            <p className="font-medium !text-white">{msg.content}</p>
                           ) : msg.content ? (
                             <StreamingMessage content={msg.content} />
                           ) : null}
@@ -463,7 +463,14 @@ export function AITutorChat({
                       ))}
                     </div>
 
-                    <div className="bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border-2 border-transparent focus-within:border-primary/30 transition-all flex items-end gap-3">
+                    <div
+                      className={cn(
+                        "bg-slate-50 dark:bg-slate-800 p-3 rounded-2xl border-2 transition-all flex items-end gap-3",
+                        isStreaming
+                          ? "border-primary/20 shadow-[0_0_0_1px_rgba(77,166,255,0.08)]"
+                          : "border-transparent focus-within:border-primary/30"
+                      )}
+                    >
                       <button
                         onClick={clearHistory}
                         className="p-2 text-slate-300 hover:text-red-400 transition-colors shrink-0"
@@ -482,17 +489,28 @@ export function AITutorChat({
                         }}
                         placeholder="Ask anything about your coursework..."
                         rows={2}
-                        disabled={isStreaming}
-                        className="flex-1 bg-transparent border-none outline-none resize-none font-semibold text-sm placeholder:text-slate-300 disabled:opacity-50"
+                        className="flex-1 bg-transparent border-none outline-none resize-none font-semibold text-sm placeholder:text-slate-300 text-slate-800 dark:text-slate-100"
                       />
                       <button
                         onClick={handleSend}
                         disabled={isStreaming || !input.trim()}
-                        className="w-10 h-10 bg-primary text-white rounded-xl shadow-md hover:shadow-primary/30 active:scale-90 transition-all flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className={cn(
+                          "w-10 h-10 text-white rounded-xl shadow-md transition-all flex items-center justify-center shrink-0",
+                          isStreaming
+                            ? "bg-primary/80 shadow-primary/20 cursor-wait"
+                            : "bg-primary hover:shadow-primary/30 active:scale-90",
+                          !input.trim() && !isStreaming && "opacity-40 cursor-not-allowed"
+                        )}
+                        title={isStreaming ? "AI tutor is responding" : "Send message"}
                       >
                         <Send size={18} />
                       </button>
                     </div>
+                    <p className="px-1 pt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      {isStreaming
+                        ? "Tutor is responding. You can type your next question while you wait."
+                        : "Press Enter to send. Use Shift + Enter for a new line."}
+                    </p>
                   </footer>
                 </>
               )}

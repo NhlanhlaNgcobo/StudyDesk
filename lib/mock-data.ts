@@ -14,6 +14,43 @@ export const DEMO_USER = {
   rank: "Scholar Tier",
 };
 
+export const DEMO_TUTOR = {
+  name: "Tutor Adams",
+  initials: "TA",
+  email: "tutor@studydesk.ac.za",
+  tier: "Tutor Pro",
+  students: 47,
+  groups: 4,
+  specialty: "Computer Science & Quantitative Reasoning",
+};
+
+export const DEMO_TUTOR_GROUPS = [
+  {
+    id: "1",
+    name: "CS201: Algorithms Pod",
+    subject: "Engineering",
+    memberCount: 12,
+    weeklyActivity: "24 posts",
+    nextSession: "Tomorrow, 15:00",
+  },
+  {
+    id: "2",
+    name: "Macro Mastery Circle",
+    subject: "Commerce",
+    memberCount: 8,
+    weeklyActivity: "11 posts",
+    nextSession: "Friday, 11:30",
+  },
+  {
+    id: "3",
+    name: "LAW201 Case Review",
+    subject: "Law",
+    memberCount: 15,
+    weeklyActivity: "19 posts",
+    nextSession: "Monday, 17:00",
+  },
+];
+
 export const DEMO_MODULES = [
   {
     id: "1",

@@ -5,118 +5,116 @@ import { selectModel } from "@/lib/claude";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function cleanJson(text: string) {
+  return text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
+}
+
+function buildSourceContext(sourceSummary: string[], sourceText: string) {
+  return [
+    sourceSummary.length > 0 ? `Selected sources: ${sourceSummary.join(", ")}` : "",
+    "Use only the supplied module material as the basis for your output.",
+    sourceText,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "Anthropic API key not configured." }, { status: 503 });
   }
 
-  const { topic, subject, moduleContext, type = "notes", userTier = "free" } = await req.json();
+  const {
+    moduleTitle,
+    sourceSummary = [],
+    sourceText,
+    mode = "notes",
+    title,
+    questionCount = 10,
+    userTier = "free",
+    subject,
+  } = await req.json();
 
-  if (!topic) {
-    return NextResponse.json({ error: "topic is required" }, { status: 400 });
+  if (!sourceText || typeof sourceText !== "string" || sourceText.trim().length < 80) {
+    return NextResponse.json(
+      { error: "Source material is required to generate knowledge assets." },
+      { status: 400 }
+    );
   }
 
   const client = new Anthropic({ apiKey });
-
-  const prompts: Record<string, string> = {
-    notes: `Generate comprehensive, well-structured study notes on: "${topic}"
-Subject: ${subject || "General"}
-${moduleContext ? `Module context: ${moduleContext}` : ""}
-
-Format the notes using:
-- Clear headings (##, ###)  
-- Bullet points for key facts
-- **Bold** for key terms
-- LaTeX for formulas ($ inline, $$ display)
-- Summary at the end
-Make it exam-focused and academically rigorous.`,
-
-    flashcards: `Generate exactly 10 flashcards for: "${topic}"
-Subject: ${subject || "General"}
-
-Return ONLY a JSON array, no markdown fences:
-[{"front": "Question or term", "back": "Answer or definition"}]
-
-Make each card exam-focused and concise.`,
-
-    exam: `Create a full mock exam for: "${topic}"
-Subject: ${subject || "General"}
-${moduleContext ? `Module context: ${moduleContext}` : ""}
-
-Return ONLY a JSON array of 15 multiple-choice questions, no markdown fences:
-[{
-  "id": "q1",
-  "text": "Question",
-  "options": ["A", "B", "C", "D"],
-  "correctIndex": 0,
-  "explanation": "Explanation",
-  "topic": "Sub-topic",
-  "marks": 2
-}]`,
-  };
-
-  const systemPrompt = type === "notes"
-    ? "You are a world-class academic tutor for South African university students. Generate clear, exam-focused study notes in Markdown."
-    : "You are StudyDesk AI. Respond with ONLY valid JSON, no markdown, no preamble.";
-
   const model = selectModel({ userTier, subject });
+  const sourceContext = buildSourceContext(sourceSummary, sourceText);
 
-  const encoder = new TextEncoder();
+  const prompts = {
+    notes: `Create structured study notes for module "${moduleTitle}".
+Title: "${title || `Study notes for ${moduleTitle}`}"
 
-  if (type === "notes") {
-    // Stream notes
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const anthropicStream = await client.messages.stream({
-            model,
-            max_tokens: 4096,
-            system: systemPrompt,
-            messages: [{ role: "user", content: prompts.notes }],
-          });
+Rules:
+- Use markdown headings and subheadings
+- Keep the output grounded in the provided material
+- End with a short revision summary
+- Include definitions, core ideas, and likely exam angles
 
-          for await (const event of anthropicStream) {
-            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: event.delta.text })}\n\n`));
-            }
-          }
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
-        } catch (e: any) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
-          controller.close();
-        }
-      },
-    });
+Module material:
+${sourceContext}`,
+    flashcards: `Generate exactly ${questionCount} flashcards grounded in the provided module material.
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "X-Model-Used": model,
-      },
-    });
-  }
+Return only valid JSON:
+{
+  "title": "Deck title",
+  "cards": [
+    { "front": "Prompt", "back": "Answer" }
+  ]
+}
 
-  // Non-streaming: flashcards or exam
+Module title: ${moduleTitle}
+Module material:
+${sourceContext}`,
+  } as const;
+
   try {
+    if (mode === "notes") {
+      const response = await client.messages.create({
+        model,
+        max_tokens: 4096,
+        system:
+          "You are StudyDesk AI. Produce academically rigorous study notes in markdown. Do not mention content that is not supported by the supplied material.",
+        messages: [{ role: "user", content: prompts.notes }],
+      });
+
+      const content = response.content[0];
+      if (content.type !== "text") throw new Error("Unexpected response type from Claude");
+
+      return NextResponse.json({
+        mode,
+        title: title || `Study notes for ${moduleTitle}`,
+        content: content.text.trim(),
+      });
+    }
+
     const response = await client.messages.create({
       model,
       max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: "user", content: prompts[type] || prompts.flashcards }],
+      system:
+        "You are StudyDesk AI. Return only valid JSON with no markdown fences or extra commentary.",
+      messages: [{ role: "user", content: prompts.flashcards }],
     });
 
-
     const content = response.content[0];
-    if (content.type !== "text") throw new Error("Bad response from Claude");
+    if (content.type !== "text") throw new Error("Unexpected response type from Claude");
 
-    const raw = content.text.trim().replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
-    const data = JSON.parse(raw);
-    return NextResponse.json({ data, type, topic });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Generation failed" }, { status: 500 });
+    const parsed = JSON.parse(cleanJson(content.text));
+    return NextResponse.json({
+      mode,
+      title: parsed.title || `Flashcards for ${moduleTitle}`,
+      cards: parsed.cards || [],
+    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Generation failed." },
+      { status: 500 }
+    );
   }
 }

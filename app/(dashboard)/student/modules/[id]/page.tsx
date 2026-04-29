@@ -1,917 +1,708 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { type ReactNode, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  Upload,
-  FileText,
-  Brain,
-  ShieldAlert,
-  MoreVertical,
-  Play,
-  FileIcon,
-  X,
-  PlusCircle,
-  Download,
-  Trash2,
-  ExternalLink,
-  ChevronRight,
-  HelpCircle,
-  BrainCircuit,
-  Timer,
+  ArrowLeft,
   BookOpen,
+  Brain,
+  FileText,
+  Files,
   Loader2,
-  CheckCircle2,
+  Plus,
   Sparkles,
-  Search,
-  Filter,
+  Timer,
+  Upload,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
-import { db, auth, storage } from "@/lib/firebase";
 import {
-  doc,
-  getDoc,
-  collection,
-  addDoc,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  serverTimestamp,
-  deleteDoc,
-  updateDoc,
-  increment,
-} from "firebase/firestore";
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
-import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import "katex/dist/katex.min.css";
+  addAssessment,
+  addFlashcardDeck,
+  addGeneratedNote,
+  addUploadedSource,
+  type AssessmentMode,
+  type AssessmentQuestionType,
+  createTypedNote,
+  getModuleKnowledge,
+  getSourceBundle,
+  ModuleSourceFile,
+  useKnowledgeStore,
+} from "@/lib/module-knowledge";
+import { cn } from "@/lib/utils";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface Module {
-  id: string;
-  name: string;
-  subject: string;
-  color: string;
-  semester: string;
-  progress: number;
-  fileCount: number;
-  ownerId: string;
-}
-
-interface StudyFile {
-  id: string;
-  name: string;
-  size: string;
-  url: string;
-  storagePath: string;
-  createdAt: any;
-}
-
-interface GeneratedNote {
-  id: string;
-  topic: string;
-  content: string;
-  createdAt: any;
-}
-
-interface GeneratedQuiz {
-  id: string;
-  topic: string;
-  difficulty: string;
-  questions: any[];
-  createdAt: any;
-}
-
-interface GeneratedExam {
-  id: string;
-  topic: string;
-  questions: any[];
-  createdAt: any;
-}
-
-const TABS = ["Materials", "Notes", "Quizzes", "Exams"];
-
-// ─── Breadcrumbs ─────────────────────────────────────────────────────────────
-
-const Breadcrumbs = ({ moduleName }: { moduleName: string }) => (
-  <nav className="flex items-center gap-3 text-xs font-black uppercase tracking-widest text-text-secondary mb-10">
-    <Link href="/student/modules" className="hover:text-primary transition-colors">
-      Modules
-    </Link>
-    <ChevronRight size={14} className="text-slate-300" />
-    <span className="text-primary">{moduleName}</span>
-  </nav>
-);
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
+const QUESTION_TYPE_OPTIONS = [
+  { id: "multiple_choice", label: "Multiple choice" },
+  { id: "short_form", label: "Short form" },
+  { id: "written", label: "Written" },
+  { id: "long_form", label: "Long form" },
+] as const;
 
 export default function ModuleDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const moduleId = params.id as string;
+  const moduleId = String(params.id);
+  useKnowledgeStore();
 
-  const [module, setModule] = useState<Module | null>(null);
-  const [activeTab, setActiveTab] = useState("Materials");
-  const [files, setFiles] = useState<StudyFile[]>([]);
-  const [notes, setNotes] = useState<GeneratedNote[]>([]);
-  const [quizzes, setQuizzes] = useState<GeneratedQuiz[]>([]);
-  const [exams, setExams] = useState<GeneratedExam[]>([]);
+  const { module, sources, notes, assessments, flashcards } = getModuleKnowledge(moduleId);
+  const [showUpload, setShowUpload] = useState(false);
+  const [showTypedNote, setShowTypedNote] = useState(false);
+  const [showGenerate, setShowGenerate] = useState<"notes" | "flashcards" | "quiz" | "exam" | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [generating, setGenerating] = useState<string | null>(null);
-  const [generatedContent, setGeneratedContent] = useState<string | null>(null);
-  const [generateError, setGenerateError] = useState<string | null>(null);
-  const [genTopic, setGenTopic] = useState("");
-  const [showGenModal, setShowGenModal] = useState<"notes" | "quiz" | "exam" | null>(null);
-  const [genDifficulty, setGenDifficulty] = useState("Medium");
-  const [genNumQ, setGenNumQ] = useState(5);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState("");
+  const [typedTitle, setTypedTitle] = useState("");
+  const [typedContent, setTypedContent] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [excerptText, setExcerptText] = useState("");
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [assessmentTitle, setAssessmentTitle] = useState("");
+  const [difficulty, setDifficulty] = useState("Medium");
+  const [questionCount, setQuestionCount] = useState(8);
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState(20);
+  const [questionTypes, setQuestionTypes] = useState<AssessmentQuestionType[]>(["multiple_choice"]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const moduleSources = useMemo(
+    () => sources.filter((source) => source.extractionStatus === "ready"),
+    [sources]
+  );
 
-  const [userTier, setUserTier] = useState<string>("free");
+  const latestQuiz = assessments.find((item) => item.mode === "quiz");
+  const latestExam = assessments.find((item) => item.mode === "exam");
 
-  // ── Load user tier ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        getDoc(doc(db, "users", user.uid)).then((snap) => {
-          if (snap.exists()) {
-            setUserTier(snap.data().tier || "free");
-          }
-        });
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // ── Load module ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!moduleId) return;
-    getDoc(doc(db, "modules", moduleId)).then((snap) => {
-      if (snap.exists()) {
-        setModule({ id: snap.id, ...snap.data() } as Module);
-      } else {
-        router.push("/student/modules");
-      }
-    });
-  }, [moduleId]);
-
-  // ── Load files ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!moduleId) return;
-    const q = query(
-      collection(db, "modules", moduleId, "files"),
-      orderBy("createdAt", "desc")
+  const toggleSource = (sourceId: string) => {
+    setSelectedSourceIds((current) =>
+      current.includes(sourceId)
+        ? current.filter((item) => item !== sourceId)
+        : [...current, sourceId]
     );
-    return onSnapshot(q, (snap) => {
-      setFiles(snap.docs.map((d) => ({ id: d.id, ...d.data() } as StudyFile)));
-    });
-  }, [moduleId]);
+  };
 
-  // ── Load notes ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!moduleId) return;
-    const q = query(
-      collection(db, "modules", moduleId, "notes"),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(q, (snap) => {
-      setNotes(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GeneratedNote)));
-    });
-  }, [moduleId]);
-
-  // ── Load quizzes ────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!moduleId) return;
-    const q = query(
-      collection(db, "modules", moduleId, "quizzes"),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(q, (snap) => {
-      setQuizzes(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GeneratedQuiz)));
-    });
-  }, [moduleId]);
-
-  // ── Load exams ──────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!moduleId) return;
-    const q = query(
-      collection(db, "modules", moduleId, "exams"),
-      orderBy("createdAt", "desc")
-    );
-    return onSnapshot(q, (snap) => {
-      setExams(snap.docs.map((d) => ({ id: d.id, ...d.data() } as GeneratedExam)));
-    });
-  }, [moduleId]);
-
-
-  // ── Upload file ─────────────────────────────────────────────────────────
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !moduleId) return;
+  const handleUpload = async () => {
+    if (!selectedFile && !excerptText.trim()) {
+      setErrorMessage("Add a file or paste a book excerpt before saving.");
+      return;
+    }
 
     setUploading(true);
-    setUploadProgress(0);
+    setErrorMessage(null);
 
-    const storagePath = `modules/${moduleId}/files/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, storagePath);
-    const task = uploadBytesResumable(storageRef, file);
-
-    task.on(
-      "state_changed",
-      (snap) => setUploadProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-      (err) => { console.error(err); setUploading(false); },
-      async () => {
-        const url = await getDownloadURL(task.snapshot.ref);
-        await addDoc(collection(db, "modules", moduleId, "files"), {
-          name: file.name,
-          size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-          url,
-          storagePath,
-          createdAt: serverTimestamp(),
-        });
-        await updateDoc(doc(db, "modules", moduleId), { fileCount: increment(1) });
-        setUploading(false);
-        setUploadProgress(0);
-        // Set gen topic from filename
-        setGenTopic(file.name.replace(/\.[^/.]+$/, ""));
-      }
-    );
-  };
-
-  const handleDeleteFile = async (file: StudyFile) => {
     try {
-      await deleteDoc(doc(db, "modules", moduleId, "files", file.id));
-      await deleteObject(ref(storage, file.storagePath));
-      await updateDoc(doc(db, "modules", moduleId), { fileCount: increment(-1) });
-    } catch (e) {
-      console.error("Delete failed:", e);
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+        const response = await fetch("/api/extract-text", {
+          method: "POST",
+          body: formData,
+        });
+        const payload = await response.json();
+
+        addUploadedSource(moduleId, {
+          title: uploadTitle.trim() || selectedFile.name,
+          fileName: selectedFile.name,
+          mimeType: selectedFile.type || "application/octet-stream",
+          size: selectedFile.size,
+          sourceKind:
+            selectedFile.type === "application/pdf"
+              ? "pdf"
+              : selectedFile.type.includes("word")
+                ? "docx"
+                : "txt",
+          extractionStatus: payload.status || "failed",
+          extractedText: payload.text || "",
+          preview: (payload.text || payload.error || "File added to the module library.").slice(0, 180),
+          sourceUrl: "",
+        });
+      }
+
+      if (excerptText.trim()) {
+        addUploadedSource(moduleId, {
+          title: uploadTitle.trim() || "Book excerpt",
+          fileName: "excerpt.txt",
+          mimeType: "text/plain",
+          size: excerptText.length,
+          sourceKind: "book_excerpt",
+          extractionStatus: "ready",
+          extractedText: excerptText.trim(),
+          preview: excerptText.trim().slice(0, 180),
+        });
+      }
+
+      setShowUpload(false);
+      setUploadTitle("");
+      setSelectedFile(null);
+      setExcerptText("");
+    } catch (error: any) {
+      setErrorMessage(error.message || "Failed to ingest source material.");
+    } finally {
+      setUploading(false);
     }
   };
 
-  // ── Generate Notes (streaming) ──────────────────────────────────────────
-  const generateNotes = async () => {
-    if (!genTopic.trim() || !module) return;
-    setGenerating("notes");
-    setGeneratedContent("");
-    setGenerateError(null);
+  const handleTypedNote = async () => {
+    if (!typedTitle.trim() || !typedContent.trim()) {
+      setErrorMessage("Add a title and note content before saving.");
+      return;
+    }
+
+    setNoteSaving(true);
+    setErrorMessage(null);
+    try {
+      createTypedNote(moduleId, typedTitle.trim(), typedContent.trim());
+      setTypedTitle("");
+      setTypedContent("");
+      setShowTypedNote(false);
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleGenerate = async () => {
+    if (selectedSourceIds.length === 0) {
+      setErrorMessage("Select at least one source or typed note before generating.");
+      return;
+    }
+
+    setGenerating(true);
+    setErrorMessage(null);
 
     try {
-      const res = await fetch("/api/generate/content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: genTopic,
-          subject: module.subject,
-          type: "notes",
-          userTier,
-        }),
-      });
+      const sourceBundle = getSourceBundle(moduleId, selectedSourceIds);
+      const generationMode = showGenerate;
 
-      if (!res.ok) throw new Error("Generation failed");
+      if (generationMode === "notes" || generationMode === "flashcards") {
+        const response = await fetch("/api/generate/content", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            moduleTitle: module.name,
+            sourceSummary: sourceBundle.sourceSummary,
+            sourceText: sourceBundle.combinedText,
+            mode: generationMode,
+            title: assessmentTitle.trim(),
+            questionCount,
+          }),
+        });
 
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let fullText = "";
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Generation failed.");
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const lines = decoder.decode(value, { stream: true }).split("\n");
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") break;
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.delta) {
-                fullText += parsed.delta;
-                setGeneratedContent(fullText);
-              }
-            } catch {}
-          }
+        if (generationMode === "notes") {
+          addGeneratedNote(
+            moduleId,
+            payload.title || `Generated notes for ${module.name}`,
+            payload.content,
+            selectedSourceIds
+          );
+          router.push("/student/notes");
+        } else {
+          addFlashcardDeck(
+            moduleId,
+            payload.title || `Flashcards for ${module.name}`,
+            payload.cards || [],
+            selectedSourceIds
+          );
         }
-      }
-
-      // Save to Firestore
-      if (fullText) {
-        const wordCount = fullText.split(/\s+/).length;
-        const readTime = `${Math.ceil(wordCount / 200)} min`;
-        await addDoc(collection(db, "modules", moduleId, "notes"), {
-          topic: genTopic,
-          content: fullText,
-          preview: fullText.slice(0, 200) + "...",
-          wordCount,
-          readTime,
-          moduleName: module.name,
-          moduleId: module.id,
-          createdAt: serverTimestamp(),
+      } else {
+        const response = await fetch("/api/generate/quiz", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            moduleId,
+            moduleTitle: module.name,
+            mode: generationMode,
+            sourceSummary: sourceBundle.sourceSummary,
+            sourceText: sourceBundle.combinedText,
+            questionTypes,
+            questionCount,
+            difficulty,
+            timeLimitMinutes,
+          }),
         });
+
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Generation failed.");
+
+        const questions = Array.isArray(payload.questions) ? payload.questions : [];
+        const totalMarks = questions.reduce((sum: number, question: any) => sum + (question.marks || 0), 0);
+        const assessmentMode = generationMode as AssessmentMode;
+        const assessment = addAssessment({
+          id: `assessment-${Date.now()}`,
+          moduleId,
+          title:
+            payload.title ||
+            assessmentTitle.trim() ||
+            `${module.tags[0]} ${assessmentMode === "exam" ? "Mock Exam" : "Practice Quiz"}`,
+          mode: assessmentMode,
+          difficulty,
+          status: "Not Started",
+          questionTypes,
+          questions,
+          sourceIds: selectedSourceIds,
+          sourceSummary: sourceBundle.sourceSummary,
+          timeLimitMinutes,
+          totalMarks,
+          bestScore: null,
+          latestScore: null,
+          attempts: 0,
+          createdAt: new Date().toISOString(),
+        });
+
+        router.push(
+          assessmentMode === "exam"
+            ? `/student/exams/${assessment.id}`
+            : `/student/quiz/${assessment.id}`
+        );
       }
 
-    } catch (e: any) {
-      setGenerateError(e.message || "Generation failed");
+      setShowGenerate(null);
+      setAssessmentTitle("");
+      setSelectedSourceIds([]);
+      setQuestionTypes(["multiple_choice"]);
+    } catch (error: any) {
+      setErrorMessage(error.message || "Failed to generate from module materials.");
     } finally {
-      setGenerating(null);
-      setShowGenModal(null);
+      setGenerating(false);
     }
   };
-
-  // ── Generate Quiz ───────────────────────────────────────────────────────
-  const generateQuiz = async () => {
-    if (!genTopic.trim() || !module) return;
-    setGenerating("quiz");
-    setGenerateError(null);
-
-    try {
-      const res = await fetch("/api/generate/quiz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: genTopic,
-          subject: module.subject,
-          numQuestions: genNumQ,
-          difficulty: genDifficulty,
-          userTier,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Quiz generation failed");
-
-      await addDoc(collection(db, "modules", moduleId, "quizzes"), {
-        topic: genTopic,
-        difficulty: genDifficulty,
-        questions: data.questions,
-        createdAt: serverTimestamp(),
-      });
-
-      setActiveTab("Quizzes");
-    } catch (e: any) {
-      setGenerateError(e.message || "Quiz generation failed");
-    } finally {
-      setGenerating(null);
-      setShowGenModal(null);
-    }
-  };
-
-  // ── Generate Exam ───────────────────────────────────────────────────────
-  const generateExam = async () => {
-    if (!genTopic.trim() || !module) return;
-    setGenerating("exam");
-    setGenerateError(null);
-
-    try {
-      const res = await fetch("/api/generate/content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: genTopic,
-          subject: module.subject,
-          type: "exam",
-          userTier,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Exam generation failed");
-
-      const data = json.data;
-
-      if (!Array.isArray(data)) {
-        throw new Error("Invalid output received from AI");
-      }
-
-      await addDoc(collection(db, "modules", moduleId, "exams"), {
-        topic: genTopic,
-        questions: data,
-        createdAt: serverTimestamp(),
-      });
-
-      setActiveTab("Exams");
-    } catch (e: any) {
-      setGenerateError(e.message || "Exam generation failed");
-    } finally {
-      setGenerating(null);
-      setShowGenModal(null);
-    }
-  };
-
-  if (!module) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="animate-spin text-primary" size={40} />
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-500">
-      <Breadcrumbs moduleName={module.name} />
+    <div className="space-y-10">
+      <div className="flex flex-wrap items-center gap-3 text-xs font-black uppercase tracking-[0.18em] text-text-secondary">
+        <Link href="/student/modules" className="inline-flex items-center gap-2 text-primary">
+          <ArrowLeft size={14} />
+          Back to modules
+        </Link>
+        <span>/</span>
+        <span>{module.tags[0]}</span>
+      </div>
 
-      {/* ── Module Header ─────────────────────────────────────────────────── */}
-      <section className="bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden">
-        <div className="h-6" style={{ backgroundColor: module.color }} />
-        <div className="p-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
-          <div className="space-y-4">
-            <div className="flex gap-4 items-center flex-wrap">
-              <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight underline italic decoration-primary decoration-4">
-                {module.name}
-              </h1>
-              <span className="px-4 py-1.5 bg-slate-50 dark:bg-slate-800 border rounded-full text-xs font-black uppercase tracking-widest text-slate-500">
-                {module.subject}
-              </span>
+      <section className="overflow-hidden rounded-[32px] border border-app bg-app-surface shadow-xl shadow-slate-900/5">
+        <div className="h-3 w-full" style={{ backgroundColor: module.color }} />
+        <div className="grid gap-8 p-8 lg:grid-cols-[1.2fr_0.8fr] lg:p-10">
+          <div className="space-y-6">
+            <div className="space-y-3">
+              <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">{module.subject}</p>
+              <h1 className="text-4xl font-black tracking-tight md:text-5xl">{module.name}</h1>
+              <p className="max-w-2xl text-base font-medium text-text-secondary">
+                Store module materials here, turn them into notes and flashcards, and build timed quizzes or exams from the actual study content.
+              </p>
             </div>
-            <div className="flex flex-wrap gap-8 pt-2">
-              {[
-                { icon: FileIcon, label: "Materials", val: files.length },
-                { icon: FileText, label: "Notes", val: notes.length },
-                { icon: Brain, label: "Quizzes", val: quizzes.length },
-              ].map((s) => (
-                <div key={s.label} className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-slate-50 dark:bg-slate-800 rounded-base flex items-center justify-center text-primary border border-slate-100 dark:border-slate-700 shadow-sm">
-                    <s.icon size={20} />
-                  </div>
+
+            <div className="grid gap-4 sm:grid-cols-4">
+              <div className="rounded-[24px] bg-app-muted p-5">
+                <div className="flex items-center gap-2 text-primary">
+                  <Files size={16} />
+                  <span className="text-xs font-black uppercase tracking-[0.16em]">Sources</span>
+                </div>
+                <p className="mt-3 text-3xl font-black">{sources.length}</p>
+              </div>
+              <div className="rounded-[24px] bg-app-muted p-5">
+                <div className="flex items-center gap-2 text-primary">
+                  <FileText size={16} />
+                  <span className="text-xs font-black uppercase tracking-[0.16em]">Notes</span>
+                </div>
+                <p className="mt-3 text-3xl font-black">{notes.length}</p>
+              </div>
+              <div className="rounded-[24px] bg-app-muted p-5">
+                <div className="flex items-center gap-2 text-primary">
+                  <Brain size={16} />
+                  <span className="text-xs font-black uppercase tracking-[0.16em]">Quizzes</span>
+                </div>
+                <p className="mt-3 text-3xl font-black">{assessments.filter((item) => item.mode === "quiz").length}</p>
+              </div>
+              <div className="rounded-[24px] bg-app-muted p-5">
+                <div className="flex items-center gap-2 text-primary">
+                  <Timer size={16} />
+                  <span className="text-xs font-black uppercase tracking-[0.16em]">Exams</span>
+                </div>
+                <p className="mt-3 text-3xl font-black">{assessments.filter((item) => item.mode === "exam").length}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <button onClick={() => setShowUpload(true)} className="inline-flex items-center gap-3 rounded-full bg-primary px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-white">
+                <Upload size={16} />
+                Add source material
+              </button>
+              <button onClick={() => setShowTypedNote(true)} className="inline-flex items-center gap-3 rounded-full border border-app bg-app-surface px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-primary">
+                <FileText size={16} />
+                New typed note
+              </button>
+              <button onClick={() => setShowGenerate("notes")} className="inline-flex items-center gap-3 rounded-full border border-app bg-app-surface px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-primary">
+                <Sparkles size={16} />
+                Generate notes
+              </button>
+              <button onClick={() => setShowGenerate("flashcards")} className="inline-flex items-center gap-3 rounded-full border border-app bg-app-surface px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-primary">
+                <BookOpen size={16} />
+                Generate flashcards
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-[28px] bg-slate-900 p-8 text-white shadow-2xl shadow-slate-900/20">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">Assessment builder</p>
+            <h2 className="mt-3 text-3xl font-black">Create source-grounded practice.</h2>
+            <p className="mt-3 text-sm font-medium text-slate-300">
+              Build mixed quizzes or timed exams from uploaded materials, typed notes, and book excerpts stored in this module.
+            </p>
+
+            <div className="mt-6 grid gap-3">
+              <button
+                onClick={() => setShowGenerate("quiz")}
+                className="inline-flex items-center justify-center gap-3 rounded-full bg-primary px-6 py-4 text-xs font-black uppercase tracking-[0.18em] text-white"
+              >
+                <Brain size={16} />
+                Build quiz
+              </button>
+              <button
+                onClick={() => setShowGenerate("exam")}
+                className="inline-flex items-center justify-center gap-3 rounded-full border border-white/10 px-6 py-4 text-xs font-black uppercase tracking-[0.18em] text-slate-200"
+              >
+                <Timer size={16} />
+                Build exam
+              </button>
+            </div>
+
+            <div className="mt-8 space-y-4 rounded-[22px] border border-white/10 bg-white/5 p-5">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">Latest generated assets</p>
+              <div className="space-y-3">
+                <div>
+                  <p className="font-black">Latest quiz</p>
+                  <p className="text-sm text-slate-300">{latestQuiz?.title || "No generated quiz yet"}</p>
+                </div>
+                <div>
+                  <p className="font-black">Latest exam</p>
+                  <p className="text-sm text-slate-300">{latestExam?.title || "No generated exam yet"}</p>
+                </div>
+                <div>
+                  <p className="font-black">Flashcard decks</p>
+                  <p className="text-sm text-slate-300">{flashcards.length} deck{flashcards.length === 1 ? "" : "s"} ready</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {errorMessage && (
+        <div className="rounded-[22px] border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-600">
+          {errorMessage}
+        </div>
+      )}
+
+      <section className="grid gap-8 lg:grid-cols-2">
+        <div className="rounded-[28px] border border-app bg-app-surface p-6 shadow-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-2xl font-black">Module source library</h2>
+            <span className="rounded-full bg-app-muted px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-text-secondary">
+              {sources.length} stored
+            </span>
+          </div>
+          <div className="grid gap-4">
+            {sources.map((source) => (
+              <div key={source.id} className="rounded-[22px] bg-app-muted p-5">
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-lg font-black leading-none">{s.val}</p>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-text-secondary">
-                      {s.label}
-                    </p>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">{source.sourceKind.replace("_", " ")}</p>
+                    <h3 className="mt-2 text-xl font-black">{source.title}</h3>
+                    <p className="mt-2 text-sm font-medium text-text-secondary">{source.preview || source.fileName}</p>
                   </div>
+                  <span className={cn(
+                    "rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em]",
+                    source.extractionStatus === "ready"
+                      ? "bg-emerald-50 text-emerald-600"
+                      : source.extractionStatus === "unsupported"
+                        ? "bg-amber-50 text-amber-600"
+                        : "bg-red-50 text-red-500"
+                  )}>
+                    {source.extractionStatus}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-[28px] border border-app bg-app-surface p-6 shadow-sm">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-black">Module notes</h2>
+              <Link href="/student/notes" className="text-xs font-black uppercase tracking-[0.18em] text-primary">
+                View notes
+              </Link>
+            </div>
+            <div className="space-y-3">
+              {notes.slice(0, 4).map((note) => (
+                <div key={note.id} className="rounded-[20px] bg-app-muted p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">{note.kind}</p>
+                  <p className="mt-1 font-black">{note.title}</p>
+                  <p className="mt-2 text-sm font-medium text-text-secondary">{note.preview}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="flex flex-col gap-4 shrink-0">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              className="px-8 py-4 bg-primary text-white font-black text-lg rounded-base flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all disabled:opacity-50"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 size={20} className="animate-spin" /> Uploading {uploadProgress}%
-                </>
-              ) : (
-                <>
-                  <Upload size={20} /> Upload Study Materials
-                </>
-              )}
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
-              onChange={handleFileUpload}
-            />
+          <div className="rounded-[28px] border border-app bg-app-surface p-6 shadow-sm">
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="text-xl font-black">Assessment library</h2>
+              <div className="flex gap-2">
+                <Link href="/student/quiz" className="text-xs font-black uppercase tracking-[0.18em] text-primary">
+                  Quizzes
+                </Link>
+                <Link href="/student/exams" className="text-xs font-black uppercase tracking-[0.18em] text-primary">
+                  Exams
+                </Link>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {assessments.slice(0, 4).map((assessment) => (
+                <Link
+                  key={assessment.id}
+                  href={
+                    assessment.mode === "exam"
+                      ? `/student/exams/${assessment.id}`
+                      : `/student/quiz/${assessment.id}`
+                  }
+                  className="block rounded-[20px] bg-app-muted p-4"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">
+                    {assessment.mode} · {assessment.difficulty}
+                  </p>
+                  <p className="mt-1 font-black">{assessment.title}</p>
+                  <p className="mt-2 text-sm font-medium text-text-secondary">
+                    {assessment.questions.length} questions · {assessment.timeLimitMinutes} min · {assessment.questionTypes.join(", ")}
+                  </p>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex px-10 border-t overflow-x-auto no-scrollbar bg-slate-50/50">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                "px-8 py-5 text-sm font-black uppercase tracking-widest transition-all relative border-b-4",
-                activeTab === tab
-                  ? "text-primary border-primary bg-white"
-                  : "text-slate-400 border-transparent hover:text-slate-600 hover:bg-white/50"
-              )}
-            >
-              {tab}
-              {activeTab === tab && (
-                <motion.div
-                  layoutId="tab-underline"
-                  className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-t-full"
-                />
-              )}
-            </button>
-          ))}
         </div>
       </section>
 
-      {/* ── Tab Content ───────────────────────────────────────────────────── */}
-      <AnimatePresence mode="wait">
-        {/* MATERIALS TAB */}
-        {activeTab === "Materials" && (
-          <motion.div
-            key="materials"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-12"
-          >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-              {/* Upload zone */}
-              <div
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center justify-center text-center py-20 group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer shadow-sm"
+      <AnimatePresence>
+        {showUpload && (
+          <ModalShell title="Add module material" onClose={() => setShowUpload(false)}>
+            <div className="space-y-4">
+              <FieldLabel label="Source title" />
+              <input
+                value={uploadTitle}
+                onChange={(event) => setUploadTitle(event.target.value)}
+                placeholder="e.g. Chapter 5 reading"
+                className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+              />
+              <FieldLabel label="Upload a PDF, DOCX, or TXT file" />
+              <input
+                type="file"
+                accept=".pdf,.docx,.txt"
+                onChange={(event) => setSelectedFile(event.target.files?.[0] || null)}
+                className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+              />
+              <FieldLabel label="Or paste a book excerpt" />
+              <textarea
+                value={excerptText}
+                onChange={(event) => setExcerptText(event.target.value)}
+                rows={6}
+                placeholder="Paste a chapter excerpt or lecture text here."
+                className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none resize-none"
+              />
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="w-full rounded-full bg-primary px-5 py-4 text-xs font-black uppercase tracking-[0.18em] text-white"
               >
-                {uploading ? (
-                  <>
-                    <Loader2 size={48} className="text-primary animate-spin mb-4" />
-                    <p className="font-black text-primary">{uploadProgress}% uploaded...</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                      <Upload size={36} />
-                    </div>
-                    <h3 className="text-2xl font-black mb-2 tracking-tight">Drop your files here</h3>
-                    <p className="text-text-secondary font-medium max-w-xs mx-auto">
-                      Upload PDFs, notes, or slides. Our AI will index them for quiz and note generation.
-                    </p>
-                    <button className="mt-8 px-6 py-3 bg-white border border-slate-100 rounded-base font-black uppercase text-xs tracking-widest shadow-lg shadow-slate-200/20 group-hover:bg-primary group-hover:text-white transition-all">
-                      Browse Local Files
-                    </button>
-                  </>
-                )}
-              </div>
-
-              {/* AI Generation Buttons */}
-              <div className="space-y-6">
-                <div>
-                  <h2 className="text-2xl font-black tracking-tight">Generate AI Power-ups</h2>
-                  <p className="text-text-secondary font-bold mt-1">Pick a topic or module, then fire up the AI.</p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-black uppercase tracking-widest text-text-secondary">
-                    Topic / Chapter *
-                  </label>
-                  <input
-                    type="text"
-                    value={genTopic}
-                    onChange={(e) => setGenTopic(e.target.value)}
-                    placeholder="e.g. Linked Lists, Keynesian Economics..."
-                    className="w-full px-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium transition-all"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[
-                    { icon: FileText, label: "Generate Notes", action: () => setShowGenModal("notes"), variant: "primary" },
-                    { icon: BrainCircuit, label: "Generate Quiz", action: () => setShowGenModal("quiz"), variant: "outline" },
-                    { icon: Timer, label: "Generate Mock Exam", action: () => setShowGenModal("exam"), variant: "outline" },
-                    { icon: HelpCircle, label: "Go to AI Tutor", action: () => router.push("/student/ai-tutor"), variant: "outline" },
-                  ].map((btn) => (
-                    <button
-                      key={btn.label}
-                      onClick={btn.action}
-                      disabled={generating !== null || (!genTopic.trim() && btn.label !== "Go to AI Tutor")}
-                      className={cn(
-                        "flex-1 py-4 rounded-base flex items-center justify-center gap-3 font-black uppercase tracking-widest text-xs transition-all active:scale-95 border-2 group disabled:opacity-40 disabled:cursor-not-allowed",
-                        btn.variant === "primary"
-                          ? "bg-primary border-primary text-white hover:shadow-xl hover:shadow-primary/30"
-                          : "border-slate-100 hover:border-primary hover:text-primary dark:border-slate-800"
-                      )}
-                    >
-                      <btn.icon size={18} className={cn(btn.variant === "outline" && "text-primary group-hover:scale-110 transition-transform")} />
-                      {btn.label}
-                    </button>
-                  ))}
-                </div>
-
-                {generateError && (
-                  <p className="text-red-500 font-bold text-sm">{generateError}</p>
-                )}
-
-                <div className="p-6 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-xl flex items-start gap-4">
-                  <div className="mt-1 text-primary shrink-0">
-                    <ShieldAlert size={20} />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black uppercase tracking-widest text-primary mb-2 italic">
-                      AI-Powered Content
-                    </h4>
-                    <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                      Generated content is saved to your module workspace automatically. Enter a topic and hit Generate.
-                    </p>
-                  </div>
-                </div>
-              </div>
+                {uploading ? "Saving material..." : "Save material"}
+              </button>
             </div>
-
-            {/* File List */}
-            {files.length > 0 && (
-              <section className="space-y-6">
-                <h2 className="text-2xl font-black tracking-tight">
-                  Study Files <span className="text-text-secondary font-medium ml-2">({files.length})</span>
-                </h2>
-                <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl shadow-sm overflow-hidden">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50/50 border-b">
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        <th className="px-8 py-5">Filename</th>
-                        <th className="px-8 py-5">Size</th>
-                        <th className="px-8 py-5 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {files.map((file) => (
-                        <tr key={file.id} className="group hover:bg-slate-50 transition-colors">
-                          <td className="px-8 py-5">
-                            <div className="flex items-center gap-4">
-                              <div className="w-10 h-10 bg-red-100 text-red-500 rounded-base flex items-center justify-center shrink-0 border border-red-50">
-                                <FileIcon size={20} />
-                              </div>
-                              <div>
-                                <p className="font-black tracking-tight text-sm group-hover:text-primary transition-colors">
-                                  {file.name}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-8 py-5">
-                            <p className="text-xs font-black uppercase tracking-widest text-slate-500">{file.size}</p>
-                          </td>
-                          <td className="px-8 py-5">
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <a href={file.url} target="_blank" rel="noopener noreferrer" className="p-2 hover:text-primary transition-colors hover:bg-white rounded-base shadow-sm border border-transparent hover:border-slate-100">
-                                <ExternalLink size={16} />
-                              </a>
-                              <button onClick={() => handleDeleteFile(file)} className="p-2 hover:text-red-500 transition-colors hover:bg-white rounded-base shadow-sm border border-transparent hover:border-slate-100">
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            )}
-          </motion.div>
-        )}
-
-        {/* NOTES TAB */}
-        {activeTab === "Notes" && (
-          <motion.div
-            key="notes"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-8"
-          >
-            {notes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
-                  <FileText size={60} className="text-slate-200" />
-                </div>
-                <h2 className="text-2xl font-bold">No notes generated yet</h2>
-                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Notes.</p>
-                <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
-                  Generate Notes
-                </button>
-              </div>
-            ) : (
-              notes.map((note) => (
-                <div key={note.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden">
-                  <div className="px-8 py-5 border-b flex items-center justify-between bg-slate-50/50">
-                    <div className="flex items-center gap-3">
-                      <Sparkles size={16} className="text-primary" />
-                      <h3 className="font-black text-lg tracking-tight">{note.topic}</h3>
-                    </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">AI Generated</span>
-                  </div>
-                  <div className="p-8 prose prose-sm max-w-none prose-headings:font-black prose-strong:font-black prose-code:text-primary prose-code:bg-primary/5 prose-code:px-1 prose-code:rounded">
-                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {note.content}
-                    </ReactMarkdown>
-                  </div>
-                </div>
-              ))
-            )}
-          </motion.div>
-        )}
-
-        {/* QUIZZES TAB */}
-        {activeTab === "Quizzes" && (
-          <motion.div
-            key="quizzes"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
-          >
-            {quizzes.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
-                  <Brain size={60} className="text-slate-200" />
-                </div>
-                <h2 className="text-2xl font-bold">No quizzes generated yet</h2>
-                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Quiz.</p>
-                <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
-                  Generate Quiz
-                </button>
-              </div>
-            ) : (
-              quizzes.map((quiz) => (
-                <div key={quiz.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-lg hover:border-primary/30 transition-all group">
-                  <div className="p-6 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-primary/10 rounded-base flex items-center justify-center">
-                        <Brain size={24} className="text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors">
-                          {quiz.topic}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                            {quiz.questions?.length || 0} questions
-                          </span>
-                          <span className="w-1 h-1 bg-slate-300 rounded-full" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                            {quiz.difficulty}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <Link
-                      href={`/student/quiz/${quiz.id}?moduleId=${moduleId}`}
-                      className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center gap-2 hover:shadow-lg hover:shadow-primary/30 transition-all"
-                    >
-                      <Play size={14} fill="currentColor" /> Start Quiz
-                    </Link>
-                  </div>
-                </div>
-              ))
-            )}
-          </motion.div>
-        )}
-
-      {/* EXAMS TAB */}
-        {activeTab === "Exams" && (
-          <motion.div
-            key="exams"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
-          >
-            {exams.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center space-y-6">
-                <div className="w-48 h-48 bg-slate-50 rounded-full flex items-center justify-center border-4 border-dashed border-slate-200">
-                  <Timer size={60} className="text-slate-200" />
-                </div>
-                <h2 className="text-2xl font-bold">No exams generated yet</h2>
-                <p className="text-text-secondary">Go to Materials, enter a topic and click Generate Mock Exam.</p>
-                <button onClick={() => setActiveTab("Materials")} className="px-6 py-3 bg-primary text-white font-black rounded-base uppercase tracking-widest text-sm">
-                  Generate Exam
-                </button>
-              </div>
-            ) : (
-              exams.map((exam) => (
-                <div key={exam.id} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden hover:shadow-lg hover:border-primary/30 transition-all group">
-                  <div className="p-6 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 bg-primary/10 rounded-base flex items-center justify-center">
-                        <Timer size={24} className="text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-black tracking-tight group-hover:text-primary transition-colors">
-                          {exam.topic}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                            {exam.questions?.length || 0} questions
-                          </span>
-                          <span className="w-1 h-1 bg-slate-300 rounded-full" />
-                          <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                            Mock Exam
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    <Link
-                      href={`/student/exams/${exam.id}?moduleId=${moduleId}`}
-                      className="px-6 py-3 bg-primary text-white font-black text-xs uppercase tracking-widest rounded-base flex items-center gap-2 hover:shadow-lg hover:shadow-primary/30 transition-all"
-                    >
-                      <Play size={14} fill="currentColor" /> Take Exam
-                    </Link>
-                  </div>
-                </div>
-              ))
-            )}
-          </motion.div>
+          </ModalShell>
         )}
       </AnimatePresence>
 
-      {/* ── Generation Modals ─────────────────────────────────────────────── */}
       <AnimatePresence>
-        {showGenModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => !generating && setShowGenModal(null)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-md rounded-xl shadow-2xl relative z-60 p-8 space-y-6"
-            >
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-black italic tracking-tight underline decoration-primary decoration-4">
-                  {showGenModal === "notes" ? "Generate Notes" : showGenModal === "quiz" ? "Generate Quiz" : "Generate Exam"}
-                </h2>
-                {!generating && (
-                  <button onClick={() => setShowGenModal(null)} className="p-2 hover:bg-slate-100 rounded-full">
-                    <X size={18} />
+        {showTypedNote && (
+          <ModalShell title="Create typed note" onClose={() => setShowTypedNote(false)}>
+            <div className="space-y-4">
+              <FieldLabel label="Note title" />
+              <input
+                value={typedTitle}
+                onChange={(event) => setTypedTitle(event.target.value)}
+                placeholder="e.g. Thermodynamics summary"
+                className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+              />
+              <FieldLabel label="Type your note" />
+              <textarea
+                value={typedContent}
+                onChange={(event) => setTypedContent(event.target.value)}
+                rows={10}
+                placeholder="Type your revision notes here."
+                className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none resize-none"
+              />
+              <button
+                onClick={handleTypedNote}
+                disabled={noteSaving}
+                className="w-full rounded-full bg-primary px-5 py-4 text-xs font-black uppercase tracking-[0.18em] text-white"
+              >
+                {noteSaving ? "Saving note..." : "Save note"}
+              </button>
+            </div>
+          </ModalShell>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showGenerate && (
+          <ModalShell
+            title={`Generate ${showGenerate === "flashcards" ? "flashcards" : showGenerate}`}
+            onClose={() => setShowGenerate(null)}
+          >
+            <div className="space-y-5">
+              <FieldLabel label="Title" />
+              <input
+                value={assessmentTitle}
+                onChange={(event) => setAssessmentTitle(event.target.value)}
+                placeholder={`Name this ${showGenerate}`}
+                className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+              />
+
+              <FieldLabel label="Select source material" />
+              <div className="grid gap-2 max-h-56 overflow-y-auto">
+                {moduleSources.map((source: ModuleSourceFile) => (
+                  <button
+                    key={source.id}
+                    onClick={() => toggleSource(source.id)}
+                    className={cn(
+                      "rounded-[18px] border px-4 py-3 text-left transition",
+                      selectedSourceIds.includes(source.id)
+                        ? "border-primary bg-primary/5"
+                        : "border-app bg-app-muted"
+                    )}
+                  >
+                    <p className="text-sm font-black">{source.title}</p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-text-secondary">{source.sourceKind.replace("_", " ")}</p>
                   </button>
-                )}
+                ))}
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs font-black uppercase tracking-widest text-text-secondary">Topic *</label>
-                <input
-                  type="text"
-                  value={genTopic}
-                  onChange={(e) => setGenTopic(e.target.value)}
-                  placeholder="e.g. Sorting Algorithms, Keynesian Theory..."
-                  className="w-full px-4 py-3 bg-slate-50 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium"
-                />
-              </div>
-
-              {(showGenModal === "quiz" || showGenModal === "exam") && (
+              {(showGenerate === "quiz" || showGenerate === "exam" || showGenerate === "flashcards") && (
                 <>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-text-secondary">Difficulty</label>
-                    <div className="flex gap-2">
-                      {["Easy", "Medium", "Hard"].map((d) => (
+                  <FieldLabel label="Question or card count" />
+                  <input
+                    type="number"
+                    value={questionCount}
+                    onChange={(event) => setQuestionCount(Number(event.target.value))}
+                    className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+                  />
+                </>
+              )}
+
+              {(showGenerate === "quiz" || showGenerate === "exam") && (
+                <>
+                  <FieldLabel label="Difficulty" />
+                  <select
+                    value={difficulty}
+                    onChange={(event) => setDifficulty(event.target.value)}
+                    className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+                  >
+                    {["Easy", "Medium", "Hard"].map((item) => (
+                      <option key={item}>{item}</option>
+                    ))}
+                  </select>
+
+                  <FieldLabel label="Time limit in minutes" />
+                  <input
+                    type="number"
+                    value={timeLimitMinutes}
+                    onChange={(event) => setTimeLimitMinutes(Number(event.target.value))}
+                    className="w-full rounded-[18px] border border-app bg-app-muted px-4 py-3 font-semibold outline-none"
+                  />
+
+                  <FieldLabel label="Question types" />
+                  <div className="flex flex-wrap gap-2">
+                    {QUESTION_TYPE_OPTIONS.map((item) => {
+                      const active = questionTypes.includes(item.id);
+                      return (
                         <button
-                          key={d}
-                          onClick={() => setGenDifficulty(d)}
+                          key={item.id}
+                          onClick={() =>
+                            setQuestionTypes((current) =>
+                              active
+                                ? current.filter((value) => value !== item.id)
+                                : [...current, item.id]
+                            )
+                          }
                           className={cn(
-                            "flex-1 py-2.5 rounded-base text-xs font-black uppercase tracking-widest border-2 transition-all",
-                            genDifficulty === d ? "bg-primary border-primary text-white" : "border-slate-100 text-slate-500 hover:border-primary/40"
+                            "rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.18em]",
+                            active ? "border-primary bg-primary text-white" : "border-app bg-app-muted text-text-secondary"
                           )}
                         >
-                          {d}
+                          {item.label}
                         </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase tracking-widest text-text-secondary">
-                      Number of Questions: {genNumQ}
-                    </label>
-                    <input
-                      type="range"
-                      min={3}
-                      max={20}
-                      value={genNumQ}
-                      onChange={(e) => setGenNumQ(Number(e.target.value))}
-                      className="w-full accent-primary"
-                    />
+                      );
+                    })}
                   </div>
                 </>
               )}
 
-              {generateError && (
-                <p className="text-red-500 font-bold text-sm">{generateError}</p>
-              )}
-
-              {generating && (
-                <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl flex items-center gap-4">
-                  <Loader2 size={24} className="animate-spin text-primary shrink-0" />
-                  <div>
-                    <p className="font-black text-primary text-sm">Claude is generating...</p>
-                    <p className="text-text-secondary text-xs">This may take 10–30 seconds.</p>
-                  </div>
-                </div>
-              )}
-
               <button
-                onClick={showGenModal === "notes" ? generateNotes : showGenModal === "exam" ? generateExam : generateQuiz}
-                disabled={!!generating || !genTopic.trim()}
-                className="w-full py-4 bg-primary text-white font-black uppercase tracking-widest rounded-base flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-xl hover:shadow-primary/30 transition-all"
+                onClick={handleGenerate}
+                disabled={generating}
+                className="w-full rounded-full bg-primary px-5 py-4 text-xs font-black uppercase tracking-[0.18em] text-white"
               >
                 {generating ? (
-                  <Loader2 size={20} className="animate-spin" />
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 size={16} className="animate-spin" />
+                    Generating
+                  </span>
                 ) : (
-                  <Sparkles size={20} />
+                  `Generate ${showGenerate}`
                 )}
-                {generating ? "Generating..." : "Generate with AI"}
               </button>
-            </motion.div>
-          </div>
+            </div>
+          </ModalShell>
         )}
       </AnimatePresence>
     </div>
   );
+}
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 18 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 18 }}
+        className="relative z-10 w-full max-w-2xl rounded-[30px] border border-app bg-app-surface p-8 shadow-2xl"
+      >
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="text-2xl font-black capitalize">{title}</h2>
+          <button onClick={onClose} className="rounded-full border border-app p-2 text-text-secondary">
+            <Plus size={16} className="rotate-45" />
+          </button>
+        </div>
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
+function FieldLabel({ label }: { label: string }) {
+  return <p className="text-[11px] font-black uppercase tracking-[0.18em] text-primary">{label}</p>;
 }

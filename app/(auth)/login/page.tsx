@@ -1,14 +1,17 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { motion } from "framer-motion";
-import { LogIn, Mail, Lock, Zap } from "lucide-react";
+import { ArrowRight, GraduationCap, LogIn, Mail, ShieldCheck, Sparkles, UserRound } from "lucide-react";
+import { signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { demoRoute, persistDemoSession } from "@/lib/demo-session";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -17,13 +20,9 @@ const loginSchema = z.object({
 
 type LoginForm = z.infer<typeof loginSchema>;
 
-import { useRouter } from "next/navigation";
-import { auth, db } from "@/lib/firebase";
-import { signInWithEmailAndPassword, onAuthStateChanged, signInAnonymously } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
-
 export default function LoginPage() {
   const router = useRouter();
+  const [authError, setAuthError] = useState("");
   const {
     register,
     handleSubmit,
@@ -32,177 +31,201 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
-  const [authError, setAuthError] = useState("");
-  const [loadingDemo, setLoadingDemo] = useState(false);
-
-  // Auto-redirect if already logged in
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const snap = await getDoc(doc(db, "users", user.uid));
-        const role = snap.data()?.role;
-        if (role === "tutor") router.replace("/tutor/dashboard");
-        else if (role === "student") router.replace("/student/dashboard");
-        else router.replace("/role-select");
-      }
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+
+      const snap = await getDoc(doc(db, "users", user.uid));
+      const role = snap.data()?.role;
+      if (role === "tutor") router.replace("/tutor/dashboard");
+      else if (role === "student") router.replace("/student/dashboard");
+      else router.replace("/role-select");
     });
-    return () => unsub();
+
+    return () => unsubscribe();
   }, [router]);
 
   const onSubmit = async (data: LoginForm) => {
     setAuthError("");
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, data.email, data.password);
-      const snap = await getDoc(doc(db, "users", cred.user.uid));
+      const credential = await signInWithEmailAndPassword(auth, data.email, data.password);
+      const snap = await getDoc(doc(db, "users", credential.user.uid));
       const role = snap.data()?.role;
-      if (role === "tutor") router.push("/tutor/dashboard");
-      else if (role === "student") router.push("/student/dashboard");
-      else router.push("/role-select");
-    } catch (error: any) {
-      console.error("Login error:", error);
+      const redirect =
+        typeof window === "undefined"
+          ? null
+          : new URLSearchParams(window.location.search).get("redirect");
+
+      if (redirect) {
+        router.push(redirect);
+      } else if (role === "tutor") {
+        router.push("/tutor/dashboard");
+      } else if (role === "student") {
+        router.push("/student/dashboard");
+      } else {
+        router.push("/role-select");
+      }
+    } catch {
       setAuthError("Invalid email or password. Please try again.");
     }
   };
 
+  const demoCards = [
+    {
+      label: "Student Demo",
+      description: "Modules, notes, quizzes, planner, analytics, and AI tutor.",
+      href: demoRoute("student"),
+      icon: GraduationCap,
+      action: () => persistDemoSession("student"),
+    },
+    {
+      label: "Tutor Demo",
+      description: "Tutor dashboard, groups, materials, and learner support surfaces.",
+      href: demoRoute("tutor"),
+      icon: UserRound,
+      action: () => persistDemoSession("tutor"),
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-[#F8FAFF] dark:bg-slate-950 flex items-center justify-center p-6 relative">
-      <div className="absolute top-6 right-6">
-        <ThemeToggle />
-      </div>
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 p-10 space-y-8"
-      >
-        <div className="flex flex-col items-center gap-4 text-center">
-            <Link href="/" className="flex items-center gap-2 mb-4 group scale-150">
-                <div className="w-10 h-10 bg-primary rounded-base flex items-center justify-center text-white font-bold text-xl group-hover:rotate-6 transition-transform">
+    <div className="min-h-screen bg-app px-6 py-12">
+      <div className="mx-auto grid min-h-[calc(100vh-6rem)] max-w-6xl gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+        <section className="space-y-8 rounded-[32px] border border-app bg-slate-900 p-10 text-white shadow-2xl shadow-slate-900/20">
+          <div className="space-y-5">
+            <Link href="/" className="inline-flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-base bg-primary text-lg font-black text-white">
                 S
-                </div>
-                <span className="font-extrabold text-2xl tracking-tight">StudyDesk</span>
+              </div>
+              <div>
+                <p className="text-xl font-black tracking-tight">StudyDesk</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">
+                  Academic co-pilot
+                </p>
+              </div>
             </Link>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">Welcome back!</h1>
-            <p className="text-slate-600 dark:text-slate-400 font-bold">Ready to dominate your syllabus?</p>
-        </div>
 
-        <div className="space-y-4">
-          <button
-            type="button"
-            disabled={loadingDemo || isSubmitting}
-            onClick={async () => {
-              setAuthError("");
-              setLoadingDemo(true);
-              try {
-                // 1. Set the local bypass flag (Ensures immediate access even if Firebase is grumpy)
-                localStorage.setItem("studydesk_demo_active", "true");
-                
-                // 2. Try to establish a real Firebase session in the background
-                try {
-                  const cred = await signInAnonymously(auth);
-                  await setDoc(doc(db, "users", cred.user.uid), { 
-                    role: "student",
-                    isDemo: true,
-                    displayName: "Demo Student",
-                    onboardingComplete: true
-                  }, { merge: true });
-                } catch (firebaseError) {
-                  console.warn("Background Firebase Demo Init failed, using local bypass only:", firebaseError);
-                }
-
-                // 3. Move to dashboard (AuthProvider & AuthGuard will now allow this)
-                router.push("/student/dashboard");
-              } catch (error) {
-                console.error("Demo login error:", error);
-                setAuthError("Critical error starting demo. Please try regular login.");
-              } finally {
-                setLoadingDemo(false);
-              }
-            }}
-            className="w-full py-5 bg-slate-900 text-white font-black rounded-base text-lg hover:shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-3 group border-b-4 border-black active:border-b-0 active:translate-y-1 shadow-xl"
-          >
-            {loadingDemo ? "Launching..." : "Enter as Demo Student"}
-            {!loadingDemo && <Zap size={22} className="text-primary fill-primary group-hover:scale-125 transition-transform" />}
-          </button>
-
-          <div className="relative py-2">
-            <div className="absolute inset-0 flex items-center"><span className="w-full border-t-2 border-slate-100 dark:border-slate-800"></span></div>
-            <div className="relative flex justify-center text-[10px] uppercase font-black tracking-[0.2em] text-slate-400">
-              <span className="bg-white dark:bg-slate-900 px-4">Or use your credentials</span>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-black uppercase tracking-[0.2em] text-blue-200">
+              <ShieldCheck size={14} />
+              Demo-first local build
             </div>
-          </div>
-        </div>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-          <div className="space-y-2">
-            <label className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-1">Email Address</label>
-            <div className="relative group">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-primary transition-colors" size={20} />
-              <input
-                {...register("email")}
-                type="email"
-                placeholder="you@university.ac.za"
-                className={cn(
-                  "w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-950/50 border-2 border-transparent dark:border-slate-800 rounded-base outline-none focus:border-primary dark:focus:border-primary focus:bg-white dark:focus:bg-slate-900 transition-all font-medium text-slate-900 dark:text-white",
-                  errors.email && "border-red-400 focus:border-red-400 bg-red-50/10"
-                )}
-              />
-            </div>
-            {errors.email && <p className="text-xs text-red-500 font-bold px-1">{errors.email.message}</p>}
+            <h1 className="text-4xl font-black leading-tight md:text-5xl">
+              Test the full product from a single sign-in gateway.
+            </h1>
+            <p className="max-w-xl text-base font-medium text-slate-300">
+              Use the role-specific demos for local testing, or sign in with a configured Firebase account when live services are available.
+            </p>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex justify-between px-1">
-                <label className="text-sm font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Password</label>
-                <Link href="#" className="text-xs font-black text-primary hover:underline uppercase tracking-widest">Forgot password?</Link>
+          <div className="grid gap-4">
+            {demoCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <Link
+                  key={card.label}
+                  href={card.href}
+                  onClick={card.action}
+                  className="group rounded-[24px] border border-white/10 bg-white/5 p-5 transition hover:-translate-y-1 hover:border-blue-300/30 hover:bg-white/10"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex gap-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-base bg-white/10 text-blue-200">
+                        <Icon size={20} />
+                      </div>
+                      <div>
+                        <p className="text-lg font-black">{card.label}</p>
+                        <p className="mt-1 text-sm font-medium text-slate-300">{card.description}</p>
+                      </div>
+                    </div>
+                    <ArrowRight size={18} className="mt-1 text-slate-400 transition group-hover:translate-x-1 group-hover:text-white" />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-[32px] border border-app bg-app-surface p-8 shadow-xl shadow-slate-900/5 md:p-10">
+          <div className="mb-8 space-y-3">
+            <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">
+              Sign in
+            </p>
+            <h2 className="text-3xl font-black tracking-tight md:text-4xl">Welcome back.</h2>
+            <p className="text-sm font-medium text-text-secondary">
+              Continue with your real account if you want to test live Firebase-backed flows.
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div className="space-y-2">
+              <label className="px-1 text-xs font-black uppercase tracking-[0.18em] text-text-secondary">
+                Email address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary" size={18} />
+                <input
+                  {...register("email")}
+                  type="email"
+                  placeholder="you@university.ac.za"
+                  className={cn(
+                    "w-full rounded-[18px] border-2 border-transparent bg-app-muted py-4 pl-12 pr-4 font-semibold outline-none transition focus:border-primary",
+                    errors.email && "border-red-400"
+                  )}
+                />
+              </div>
+              {errors.email && <p className="px-1 text-xs font-bold text-red-500">{errors.email.message}</p>}
             </div>
-            <div className="relative group">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 group-focus-within:text-primary transition-colors" size={20} />
+
+            <div className="space-y-2">
+              <label className="px-1 text-xs font-black uppercase tracking-[0.18em] text-text-secondary">
+                Password
+              </label>
               <input
                 {...register("password")}
                 type="password"
-                placeholder="••••••••"
+                placeholder="Enter your password"
                 className={cn(
-                  "w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-950/50 border-2 border-transparent dark:border-slate-800 rounded-base outline-none focus:border-primary dark:focus:border-primary focus:bg-white dark:focus:bg-slate-900 transition-all font-medium text-slate-900 dark:text-white",
-                  errors.password && "border-red-400 focus:border-red-400 bg-red-50/10"
+                  "w-full rounded-[18px] border-2 border-transparent bg-app-muted px-4 py-4 font-semibold outline-none transition focus:border-primary",
+                  errors.password && "border-red-400"
                 )}
               />
+              {errors.password && <p className="px-1 text-xs font-bold text-red-500">{errors.password.message}</p>}
             </div>
-            {errors.password && <p className="text-xs text-red-500 font-bold px-1">{errors.password.message}</p>}
+
+            {authError && (
+              <div className="rounded-[18px] border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
+                {authError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex w-full items-center justify-center gap-3 rounded-full bg-primary px-6 py-4 text-sm font-black uppercase tracking-[0.18em] text-white shadow-xl shadow-blue-500/20 transition hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <LogIn size={16} />
+              {isSubmitting ? "Signing in..." : "Login"}
+            </button>
+          </form>
+
+          <div className="mt-8 rounded-[24px] border border-blue-100 bg-blue-50 p-5 dark:border-blue-900/30 dark:bg-blue-950/20">
+            <div className="flex gap-3">
+              <Sparkles className="mt-1 text-primary" size={18} />
+              <div>
+                <p className="font-black text-app">AI tutor note</p>
+                <p className="mt-1 text-sm font-medium text-text-secondary">
+                  This local build includes Anthropic support for the tutor experience, with graceful demo fallbacks for the rest of the stack.
+                </p>
+              </div>
+            </div>
           </div>
 
-            {authError && <p className="text-sm text-red-500 font-bold px-1 text-center bg-red-50 p-2 rounded-md">{authError}</p>}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full py-4 bg-primary text-white font-bold rounded-base text-lg hover:shadow-lg hover:shadow-primary/20 transition-all flex items-center justify-center gap-2 group border-0 outline-none active:scale-95 disabled:opacity-50"
-          >
-            {isSubmitting ? "Logging in..." : "Login"}
-            {!isSubmitting && <LogIn size={20} className="group-hover:translate-x-1 transition-transform" />}
-          </button>
-
-        </form>
-
-         <div className="relative py-4">
-            <div className="absolute inset-0 flex items-center"><span className="w-full border-t-2 border-slate-100 dark:border-slate-800"></span></div>
-            <div className="relative flex justify-center text-[10px] uppercase font-black tracking-[0.2em] text-slate-500">
-              <span className="bg-white dark:bg-slate-900 px-4">Or continue with</span>
-            </div>
-         </div>
-
-        <button className="w-full py-4 border-2 border-slate-100 dark:border-slate-800 rounded-base font-bold flex items-center justify-center gap-3 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all text-slate-900 dark:text-white">
-           <svg className="w-5 h-5" viewBox="0 0 24 24">
-             <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-             <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-             <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
-             <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-           </svg>
-           Google Account
-        </button>
-
-         <p className="text-center text-sm font-bold text-slate-600">
-           New here? <Link href="/register" className="text-primary hover:underline font-black">Create an account</Link>
-         </p>
-      </motion.div>
+          <p className="mt-6 text-center text-sm font-semibold text-text-secondary">
+            New here? <Link href="/register" className="font-black text-primary hover:underline">Create an account</Link>
+          </p>
+        </section>
+      </div>
     </div>
   );
 }

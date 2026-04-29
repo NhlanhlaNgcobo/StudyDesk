@@ -35,6 +35,7 @@ const QUICK_PROMPTS = [
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
+
   return (
     <button
       onClick={async () => {
@@ -95,7 +96,7 @@ export default function AITutorPage() {
         ...updated,
         {
           role: "assistant",
-          content: `⚠️ **Error:** ${err.message || "Failed to get response. Check your Anthropic API key."}`,
+          content: `Warning: **Error:** ${err.message || "Failed to get response. Check your Anthropic API key."}`,
         },
       ]);
       setLoading(false);
@@ -111,7 +112,6 @@ export default function AITutorPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)] max-h-[900px]">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6 shrink-0">
         <div>
           <h1 className="text-4xl font-black tracking-tight italic underline decoration-primary decoration-4 uppercase">
@@ -119,7 +119,7 @@ export default function AITutorPage() {
           </h1>
           <p className="text-slate-500 font-bold mt-1 flex items-center gap-2">
             <Sparkles size={14} className="text-primary" />
-            Powered by Claude — your 24/7 academic co-pilot
+            Powered by Claude - your 24/7 academic co-pilot
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -141,9 +141,7 @@ export default function AITutorPage() {
         </div>
       </div>
 
-      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto space-y-6 pr-2 pb-4 min-h-0">
-        {/* Empty state */}
         {messages.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -159,7 +157,7 @@ export default function AITutorPage() {
               </h2>
               <p className="text-slate-500 font-bold max-w-md">
                 I can explain concepts, solve problems, generate exam questions, summarise notes,
-                and much more — in any subject.
+                and much more - in any subject.
               </p>
             </div>
 
@@ -181,7 +179,6 @@ export default function AITutorPage() {
           </motion.div>
         )}
 
-        {/* Messages */}
         <AnimatePresence>
           {messages.map((m, i) => (
             <motion.div
@@ -209,7 +206,7 @@ export default function AITutorPage() {
                   <>
                     <div className="prose prose-sm max-w-none prose-headings:font-black prose-strong:font-black prose-code:text-primary prose-code:bg-primary/5 prose-code:px-1 prose-code:rounded">
                       <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                        {m.content || (loading && i === messages.length - 1 ? "▌" : "")}
+                        {m.content || (loading && i === messages.length - 1 ? "..." : "")}
                       </ReactMarkdown>
                     </div>
                     {m.content && <CopyButton text={m.content} />}
@@ -230,19 +227,18 @@ export default function AITutorPage() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input Area */}
       <div className="shrink-0 mt-4 bg-white border-2 border-slate-100 rounded-2xl shadow-xl focus-within:border-primary transition-colors">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask anything about your studies… (Shift + Enter for new line)"
+          placeholder="Ask anything about your studies... (Shift + Enter for new line)"
           rows={3}
           className="w-full px-5 pt-4 pb-2 resize-none outline-none font-medium text-slate-800 rounded-t-2xl bg-transparent"
         />
         <div className="flex items-center justify-between px-5 pb-4">
           <span className="text-xs font-black uppercase tracking-widest text-slate-400">
-            {subject || "No subject set"} · Claude AI
+            {subject || "No subject set"} - Claude AI
           </span>
           <button
             onClick={() => sendMessage(input)}

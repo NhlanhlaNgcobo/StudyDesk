@@ -1,6 +1,6 @@
 /**
- * StudyDesk — Claude AI Integration
- * Brain: Claude 3.5 Sonnet (standard) | Claude 3 Opus (premium + STEM)
+ * StudyDesk - Claude AI Integration
+ * Brain: Claude Sonnet 4 (standard) | Claude Opus 4 (premium)
  */
 
 export type UserTier = "free" | "basic" | "premium" | "elite";
@@ -17,48 +17,22 @@ export interface ClaudeOptions {
   maxTokens?: number;
 }
 
-// Subjects that trigger the more powerful Opus model
-const STEM_SUBJECTS = [
-  "mathematics",
-  "maths",
-  "calculus",
-  "physics",
-  "chemistry",
-  "biology",
-  "engineering",
-  "statistics",
-  "computer science",
-  "data science",
-];
-
-// Updated to valid current Anthropic model identifiers
 const MODELS = {
-  sonnet: "claude-3-5-sonnet-20241022",
-  opus: "claude-3-opus-20240229",
+  sonnet: "claude-sonnet-4-20250514",
+  opus: "claude-opus-4-20250514",
 };
 
-/**
- * Determine which Claude model to use based on user tier and subject.
- * - Premium / Elite users always get Opus 3
- * - STEM subjects for any paid tier get Opus 3
- * - Everyone else gets Sonnet 3.5
- */
 export function selectModel(options: ClaudeOptions): string {
-  const { userTier = "free", subject = "" } = options;
+  const { userTier = "free" } = options;
   const isPremium = userTier === "premium" || userTier === "elite";
-  const isSTEM = STEM_SUBJECTS.some((s) =>
-    subject.toLowerCase().includes(s)
-  );
 
-  if (isPremium || (userTier === "basic" && isSTEM)) {
+  if (isPremium) {
     return MODELS.opus;
   }
+
   return MODELS.sonnet;
 }
 
-/**
- * Build the system prompt for the AI Tutor.
- */
 export function buildSystemPrompt(options: ClaudeOptions): string {
   const { moduleContext, subject, userTier = "free" } = options;
   const tierLabel =
@@ -70,7 +44,7 @@ export function buildSystemPrompt(options: ClaudeOptions): string {
           ? "Basic"
           : "Free";
 
-  return `You are StudyDesk AI Tutor — a world-class academic assistant specialising in helping South African university students master their coursework.
+  return `You are StudyDesk AI Tutor - a world-class academic assistant specialising in helping South African university students master their coursework.
 
 STUDENT TIER: ${tierLabel}
 ${subject ? `CURRENT SUBJECT: ${subject}` : ""}
@@ -87,15 +61,11 @@ YOUR ROLE:
 FORMATTING:
 - Use markdown: **bold**, *italic*, bullet lists, numbered steps
 - Use LaTeX for all mathematical expressions
-- Be encouraging but precise — accuracy is non-negotiable
+- Be encouraging but precise - accuracy is non-negotiable
 
 Remember: You are the student's co-pilot to academic excellence.`;
 }
 
-/**
- * Stream a Claude response from the API route.
- * Call this from client components — it hits /api/chat.
- */
 export async function streamChatResponse(
   messages: ChatMessage[],
   options: ClaudeOptions,
@@ -136,7 +106,7 @@ export async function streamChatResponse(
           const parsed = JSON.parse(data);
           if (parsed.delta) onChunk(parsed.delta);
         } catch {
-          // ignore parse errors on partial chunks
+          // Ignore parse errors on partial chunks.
         }
       }
     }
