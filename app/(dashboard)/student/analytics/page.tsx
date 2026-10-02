@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState } from "react";
 import {
@@ -134,9 +134,9 @@ export default function AnalyticsPage() {
               <TrendingUp size={20} className="text-primary" />
               <h2 className="text-xl font-bold uppercase italic tracking-tight underline decoration-primary decoration-4">Study Efficiency Trends</h2>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-1 px-1">
               {["Weeks", "Months", "Semesters"].map((t) => (
-                <button key={t} className="px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest text-slate-400 hover:border-primary hover:text-primary transition-all shadow-sm">By {t}</button>
+                <button key={t} className="shrink-0 px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-widest text-text-secondary hover:border-primary hover:text-primary transition-all shadow-sm">By {t}</button>
               ))}
             </div>
           </div>
@@ -180,9 +180,9 @@ export default function AnalyticsPage() {
                 <HeatmapTile key={i} intensity={intensity} />
               ))}
               <div className="ml-4 flex items-center gap-2">
-                <span className="text-[8px] font-black uppercase tracking-widest text-slate-300">Less</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">Less</span>
                 <div className="flex gap-1.5"><HeatmapTile intensity={0} /><HeatmapTile intensity={1} /><HeatmapTile intensity={2} /><HeatmapTile intensity={3} /><HeatmapTile intensity={4} /></div>
-                <span className="text-[8px] font-black uppercase tracking-widest text-slate-300">More</span>
+                <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">More</span>
               </div>
             </div>
           </div>

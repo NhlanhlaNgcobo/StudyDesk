@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   ExternalLink,
   Flame,
   Plus,
@@ -20,6 +21,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
+  createIcsCalendar,
   createGoogleCalendarUrl,
   DEFAULT_PLANNER_SETTINGS,
   formatEventDate,
@@ -42,6 +44,7 @@ const TYPE_STYLE: Record<PlannerEventType, string> = {
   group: "bg-primary",
   study: "bg-emerald-500",
   deadline: "bg-orange-500",
+  personal: "bg-slate-500",
 };
 
 const TYPE_ICON: Record<PlannerEventType, React.ReactNode> = {
@@ -49,6 +52,7 @@ const TYPE_ICON: Record<PlannerEventType, React.ReactNode> = {
   group: <Users size={14} />,
   study: <BookOpen size={14} />,
   deadline: <Flame size={14} />,
+  personal: <Calendar size={14} />,
 };
 
 const TYPE_LABEL: Record<PlannerEventType, string> = {
@@ -56,6 +60,7 @@ const TYPE_LABEL: Record<PlannerEventType, string> = {
   group: "Study Group",
   study: "Study Session",
   deadline: "Deadline",
+  personal: "Personal event",
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -69,6 +74,7 @@ const EVENT_COLORS = {
   group: "#4DA6FF",
   study: "#10B981",
   deadline: "#F59E0B",
+  personal: "#64748B",
 } as const;
 
 const EMPTY_FORM = {
@@ -141,6 +147,19 @@ export default function PlannerPage() {
     if (typeof window !== "undefined" && "Notification" in window) {
       setNotificationPermission(Notification.permission);
     }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    const type = params.get("type") as PlannerEventType;
+    const allowedType = ["exam", "group", "study", "deadline", "personal"].includes(type) ? type : "study";
+    const module = params.get("module") || "";
+    const date = new Date().toISOString().split("T")[0];
+    setSelectedDate(date);
+    setForm({ ...EMPTY_FORM, type: allowedType, module, date, duration: allowedType === "deadline" ? 15 : DEFAULT_PLANNER_SETTINGS.defaultStudyDuration });
+    setShowAdd(true);
   }, []);
 
   useEffect(() => {
@@ -267,14 +286,14 @@ export default function PlannerPage() {
   };
 
   const handleSaveEvent = () => {
-    if (!form.title.trim() || !form.module.trim() || !form.date || !form.time) {
+    if (!form.title.trim() || !form.date || !form.time) {
       return;
     }
 
     const nextEvent: PlannerEvent = {
       id: `event-${Date.now()}`,
       title: form.title.trim(),
-      module: form.module.trim().toUpperCase(),
+      module: form.module.trim().toUpperCase() || "PERSONAL",
       type: form.type,
       date: form.date,
       time: form.time,
@@ -303,16 +322,25 @@ export default function PlannerPage() {
       })
     : "";
 
+  const downloadIcs = (event: PlannerEvent) => {
+    const blob = new Blob([createIcsCalendar(event)], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${event.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "studydesk-event"}.ics`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-10 animate-in fade-in duration-500">
       <section className="flex flex-col xl:flex-row xl:items-end justify-between gap-6">
         <div className="space-y-3">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight italic underline decoration-primary decoration-4">
-            Study Planner
+            Academic Calendar
           </h1>
           <p className="text-text-secondary font-bold max-w-2xl">
-            Plan study blocks, tune reminder timing, and push important sessions into Google Calendar.
-            Browser reminders work immediately, and Google Calendar handoff is ready per event.
+            One calendar for study time, exams, deadlines, group work, and life outside campus. Add as many events as a day needs, then carry them into the calendar you already use.
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
@@ -327,6 +355,12 @@ export default function PlannerPage() {
             className="px-6 py-4 bg-primary text-white font-bold rounded-base flex items-center justify-center gap-3 hover:shadow-xl hover:shadow-primary/30 transition-all"
           >
             <Plus size={20} /> Add Event
+          </button>
+          <button
+            onClick={() => openModal("personal")}
+            className="px-5 py-4 border border-app bg-app-surface text-app font-bold rounded-base flex items-center justify-center gap-2 hover:border-primary/40 transition-all"
+          >
+            <Calendar size={18} /> Personal
           </button>
         </div>
       </section>
@@ -399,16 +433,15 @@ export default function PlannerPage() {
         <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Google Calendar</p>
-              <h2 className="text-2xl font-black tracking-tight mt-2">Calendar handoff and sync prep</h2>
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">Calendar connections</p>
+              <h2 className="text-2xl font-black tracking-tight mt-2">Use the calendar you already trust</h2>
             </div>
             <div className="w-12 h-12 rounded-full bg-blue-50 text-primary flex items-center justify-center">
               <CalendarPlus size={22} />
             </div>
           </div>
           <p className="text-sm font-bold text-text-secondary">
-            Open any StudyDesk event in Google Calendar with prefilled time, module, and reminder notes.
-            Full account linking can be layered on once Google OAuth client credentials are configured.
+            Send any event directly to Google Calendar, or download an .ics file for Outlook, Apple Calendar, and other calendar apps.
           </p>
           <label className="flex items-center justify-between gap-4 bg-slate-50 dark:bg-slate-800 rounded-xl px-4 py-3">
             <div>
@@ -444,6 +477,14 @@ export default function PlannerPage() {
             >
               Open selected event in Google Calendar <ExternalLink size={14} />
             </a>
+          )}
+          {selectedEvents[0] && (
+            <button
+              onClick={() => downloadIcs(selectedEvents[0])}
+              className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-base bg-app-muted text-app font-black uppercase tracking-widest text-xs hover:bg-app-surface hover:ring-1 hover:ring-primary/20 transition-colors"
+            >
+              Download for Outlook / Apple <Download size={14} />
+            </button>
           )}
         </div>
 
@@ -630,6 +671,12 @@ export default function PlannerPage() {
                         >
                           Open in Google Calendar <ExternalLink size={12} />
                         </a>
+                        <button
+                          onClick={() => downloadIcs(event)}
+                          className="inline-flex items-center gap-2 text-text-secondary font-black uppercase tracking-widest text-[11px] hover:text-primary"
+                        >
+                          Download calendar file <Download size={12} />
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -749,13 +796,13 @@ export default function PlannerPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Module</label>
+                  <label className="text-xs font-bold uppercase tracking-widest text-text-secondary">Module or category <span className="normal-case tracking-normal font-medium">(optional)</span></label>
                   <input
                     type="text"
                     aria-label="Module"
                     value={form.module}
                     onChange={(event) => setForm((current) => ({ ...current, module: event.target.value }))}
-                    placeholder="e.g. MATH101"
+                    placeholder="e.g. MATH101 or personal"
                     className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 border-2 border-transparent focus:border-primary rounded-base outline-none font-medium"
                   />
                 </div>

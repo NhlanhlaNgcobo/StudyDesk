@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, BookOpen, LayoutDashboard, LogOut, Moon, Search, Settings, Sun, Users } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, LayoutDashboard, LogOut, Moon, Search, Settings, Sun, Users, Radar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
 import { AuthGuard } from "@/components/auth-guard";
@@ -11,8 +11,10 @@ import { useAuth } from "@/components/auth-provider";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/tutor/dashboard" },
+  { icon: Radar, label: "Insights", href: "/tutor/insights" },
   { icon: Users, label: "Groups", href: "/tutor/groups" },
   { icon: BookOpen, label: "Materials", href: "/tutor/materials" },
+  { icon: CalendarDays, label: "Calendar", href: "/tutor/calendar" },
   { icon: Settings, label: "Settings", href: "/tutor/settings" },
 ];
 

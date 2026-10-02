@@ -11,37 +11,19 @@ import {
   MoreVertical,
   Play,
   ArrowRight,
-  TrendingUp,
   Brain,
-  Layers,
-  Flame,
   Calendar,
   X,
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { DEMO_UPCOMING_SESSIONS, DEMO_MODULES } from "@/lib/mock-data";
+import { MasteryPanel, ExamReadinessBoard } from "@/components/student/mastery-panel";
+import { useLearnerModel, dueSkills } from "@/lib/learner-model";
 
 const COLORS = ["#4DA6FF", "#8B5CF6", "#10B981", "#F59E0B", "#EF4444", "#EC4899"];
 const SUBJECTS = ["Science", "Maths", "Humanities", "Law", "Engineering", "Medicine"];
-
-const METRICS = [
-  { label: "Modules Created", value: 8, icon: Layers, color: "text-blue-500", bg: "bg-blue-50" },
-  { label: "Notes Generated", value: 24, icon: FileText, color: "text-purple-500", bg: "bg-purple-50" },
-  { label: "Quizzes Taken", value: 16, icon: Brain, color: "text-orange-500", bg: "bg-orange-50" },
-  { label: "Hours Studied", value: 47, icon: Clock, color: "text-emerald-500", bg: "bg-emerald-50" },
-];
 
 const RECENT_MODULES = DEMO_MODULES.slice(0, 3).map((m) => ({
   id: m.id,
@@ -52,33 +34,8 @@ const RECENT_MODULES = DEMO_MODULES.slice(0, 3).map((m) => ({
   color: m.id === "1" ? "bg-blue-500" : m.id === "2" ? "bg-purple-500" : "bg-emerald-500",
 }));
 
-const WEEKLY_ACTIVITY = [
-  { day: "Mon", hours: 4.5 },
-  { day: "Tue", hours: 6.2 },
-  { day: "Wed", hours: 3.8 },
-  { day: "Thu", hours: 8.4 },
-  { day: "Fri", hours: 5.1 },
-  { day: "Sat", hours: 2.3 },
-  { day: "Sun", hours: 4.8 },
-];
-
-const MetricCard = ({ label, value, icon: Icon, color, bg }: any) => (
-  <motion.div
-    whileHover={{ y: -5 }}
-    className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 flex items-center gap-6"
-  >
-    <div className={cn("w-14 h-14 rounded-base flex items-center justify-center shrink-0", bg, color)}>
-      <Icon size={28} />
-    </div>
-    <div>
-      <h3 className="text-3xl font-bold text-slate-900 dark:text-white mb-1 tracking-tight">{value}</h3>
-      <p className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">{label}</p>
-    </div>
-  </motion.div>
-);
-
 const ModuleCard = ({ id, name, tags, fileCount, progress, color }: any) => (
-  <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-slate-100 dark:border-slate-800 flex flex-col gap-6 group hover:shadow-xl hover:shadow-slate-200/50 hover:border-primary/50 transition-all">
+  <div className="surface-card rounded-[20px] p-6 flex flex-col gap-6 group transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg">
     <div className="flex justify-between items-start">
       <div className={cn("px-3 py-1 font-black text-[10px] uppercase tracking-widest text-white rounded-full", color)}>
         {tags[0]}
@@ -90,7 +47,7 @@ const ModuleCard = ({ id, name, tags, fileCount, progress, color }: any) => (
 
     <div>
       <h3 className="text-xl font-extrabold mb-2 tracking-tight group-hover:text-primary transition-colors text-slate-900 dark:text-white">{name}</h3>
-      <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{fileCount} Study Files Attached</p>
+      <p className="text-sm font-medium text-text-secondary">{fileCount} study files attached</p>
     </div>
 
     <div className="space-y-3">
@@ -108,7 +65,7 @@ const ModuleCard = ({ id, name, tags, fileCount, progress, color }: any) => (
       </div>
     </div>
 
-    <Link href={`/student/modules/${id}`} className="w-full py-4 mt-2 bg-slate-50 dark:bg-slate-800 rounded-base font-black uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-primary hover:text-white transition-all shadow-sm text-center">
+    <Link href={`/student/modules/${id}`} className="w-full py-3 mt-2 bg-app-muted rounded-base font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary hover:text-white transition-all text-center">
       Continue Studying <Play size={14} fill="currentColor" />
     </Link>
   </div>
@@ -121,15 +78,16 @@ export default function StudentDashboard() {
   const [selectedSubject, setSelectedSubject] = useState("Engineering");
   const [selectedColor, setSelectedColor] = useState("#4DA6FF");
   const [generating, setGenerating] = useState<string | null>(null);
-  const [chartsReady, setChartsReady] = useState(false);
   const [greeting, setGreeting] = useState("Welcome back");
   const [dateStr, setDateStr] = useState("South Africa study workspace");
 
   const { profile } = useAuth();
   const firstName = profile?.displayName ? profile.displayName.split(" ")[0] : "Student";
 
+  const learnerModel = useLearnerModel();
+  const dueCount = dueSkills(learnerModel).length;
+
   useEffect(() => {
-    setChartsReady(true);
     const now = new Date();
     const hour = now.getHours();
     setGreeting(hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening");
@@ -152,69 +110,75 @@ export default function StudentDashboard() {
   };
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-500">
+    <div className="space-y-10 animate-in fade-in duration-500">
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight italic decoration-primary decoration-4 underline">
+          <p className="eyebrow mb-3">Your learning desk</p>
+          <h1 className="text-4xl md:text-5xl font-semibold tracking-[-0.04em]">
             {greeting}, {firstName}
           </h1>
-          <div className="flex items-center gap-4 mt-3 text-slate-600 dark:text-slate-300 font-bold">
+          <div className="flex flex-wrap items-center gap-3 mt-3 text-sm text-text-secondary font-medium">
             <Calendar size={18} className="text-primary" />
             <span>{dateStr}</span>
-            <span className="w-1.5 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full text-xs font-black uppercase tracking-widest">
-              <Flame size={14} /> 7 Day Streak
-            </div>
+            {dueCount > 0 && (
+              <>
+                <span className="w-1.5 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full" />
+                <Link
+                  href="/student/quiz"
+                  className="flex items-center gap-1.5 px-3 py-1 bg-primary/10 text-primary rounded-full text-xs font-black uppercase tracking-widest hover:bg-primary/20 transition-colors"
+                >
+                  <Brain size={14} /> {dueCount} due for review
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
         <button
           onClick={() => setShowNewModule(true)}
-          className="px-8 py-4 bg-primary text-white font-black text-lg rounded-base flex items-center justify-center gap-3 hover:shadow-2xl hover:shadow-primary/30 active:scale-95 transition-all"
+          className="px-6 py-3.5 bg-primary text-white font-bold rounded-base flex items-center justify-center gap-3 hover:bg-primary-strong hover:shadow-lg hover:shadow-primary/20 active:scale-95 transition-all"
         >
           <Plus size={24} /> New Study Module
         </button>
       </section>
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {METRICS.map((metric) => <MetricCard key={metric.label} {...metric} />)}
-      </section>
+      <MasteryPanel />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-12">
           <section className="space-y-6">
-            <h2 className="text-2xl font-black tracking-tight">Quick Actions</h2>
+            <div><p className="eyebrow">Get started</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Pick up where you left off</h2></div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <button
                 onClick={() => handleQuickAction("/student/notes", "notes")}
-                className="p-8 bg-blue-100/30 dark:bg-blue-950/20 border-2 border-blue-100 dark:border-blue-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                className="surface-card p-6 rounded-[20px] flex flex-col items-start gap-4 text-left group hover:border-primary/30 transition-all active:scale-[0.98] relative overflow-hidden"
               >
                 {generating === "notes" && <div className="absolute inset-0 flex items-center justify-center bg-blue-100/80 dark:bg-blue-950/80 z-20"><span className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>}
-                <div className="w-14 h-14 bg-white dark:bg-slate-800 text-blue-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative z-10"><FileText size={28} /></div>
-                <span className="font-extrabold text-blue-600 dark:text-blue-400 tracking-tight relative z-10">Generate Notes</span>
+                <div className="w-12 h-12 bg-blue-50 dark:bg-blue-950/30 text-primary rounded-base flex items-center justify-center group-hover:scale-105 transition-transform relative z-10"><FileText size={22} /></div>
+                <span className="font-semibold tracking-tight relative z-10">Create notes</span><span className="text-xs text-text-secondary -mt-2">Organise material into clear revision notes</span>
               </button>
               <button
                 onClick={() => handleQuickAction("/student/quiz", "quiz")}
-                className="p-8 bg-purple-100/30 dark:bg-purple-950/20 border-2 border-purple-100 dark:border-purple-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-purple-100/50 dark:hover:bg-purple-900/30 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                className="surface-card p-6 rounded-[20px] flex flex-col items-start gap-4 text-left group hover:border-primary/30 transition-all active:scale-[0.98] relative overflow-hidden"
               >
                 {generating === "quiz" && <div className="absolute inset-0 flex items-center justify-center bg-purple-100/80 dark:bg-purple-950/80 z-20"><span className="w-6 h-6 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" /></div>}
-                <div className="w-14 h-14 bg-white dark:bg-slate-800 text-purple-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative z-10"><Brain size={28} /></div>
-                <span className="font-extrabold text-purple-600 dark:text-purple-400 tracking-tight relative z-10">Practice Quiz</span>
+                <div className="w-12 h-12 bg-violet-50 dark:bg-violet-950/30 text-violet-600 rounded-base flex items-center justify-center group-hover:scale-105 transition-transform relative z-10"><Brain size={22} /></div>
+                <span className="font-semibold tracking-tight relative z-10">Practice recall</span><span className="text-xs text-text-secondary -mt-2">Test your understanding before the exam</span>
               </button>
               <button
                 onClick={() => handleQuickAction("/student/exams", "exams")}
-                className="p-8 bg-emerald-100/30 dark:bg-emerald-950/20 border-2 border-emerald-100 dark:border-emerald-900/30 rounded-xl flex flex-col items-center gap-4 text-center group hover:bg-emerald-100/50 dark:hover:bg-emerald-900/30 transition-all active:scale-95 shadow-sm relative overflow-hidden"
+                className="surface-card p-6 rounded-[20px] flex flex-col items-start gap-4 text-left group hover:border-primary/30 transition-all active:scale-[0.98] relative overflow-hidden"
               >
                 {generating === "exams" && <div className="absolute inset-0 flex items-center justify-center bg-emerald-100/80 dark:bg-emerald-950/80 z-20"><span className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" /></div>}
-                <div className="w-14 h-14 bg-white dark:bg-slate-800 text-emerald-500 rounded-base flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform relative z-10"><Zap size={28} /></div>
-                <span className="font-extrabold text-emerald-600 dark:text-emerald-400 tracking-tight text-balance relative z-10">Launch Mock Exam</span>
+                <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 rounded-base flex items-center justify-center group-hover:scale-105 transition-transform relative z-10"><Zap size={22} /></div>
+                <span className="font-semibold tracking-tight relative z-10">Run a mock exam</span><span className="text-xs text-text-secondary -mt-2">Build confidence under timed conditions</span>
               </button>
             </div>
           </section>
 
           <section className="space-y-6">
             <div className="flex justify-between items-center px-1">
-              <h2 className="text-2xl font-black tracking-tight">Recent Modules</h2>
+              <div><p className="eyebrow">Continue learning</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Recent modules</h2></div>
               <Link href="/student/modules" className="text-primary font-black uppercase text-[11px] tracking-widest flex items-center gap-2 hover:translate-x-2 transition-transform bg-primary/5 px-3 py-1.5 rounded-full">See All <ArrowRight size={16} /></Link>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -223,66 +187,52 @@ export default function StudentDashboard() {
           </section>
 
           <section className="space-y-6">
-            <div className="flex justify-between items-center px-1">
-              <h2 className="text-2xl font-black tracking-tight">Weekly Activity</h2>
-              <div className="flex items-center gap-2 text-emerald-500 font-bold text-sm bg-emerald-50 dark:bg-emerald-900/20 px-3 py-1 rounded-full uppercase tracking-widest leading-none">
-                <TrendingUp size={14} /> +12% vs Last Week
-              </div>
+            <div className="px-1">
+              <h2 className="text-2xl font-black tracking-tight">Exam readiness</h2>
+              <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mt-1">
+                Mastery discounted by how much you&apos;d still recall today — knowing it once
+                is not readiness.
+              </p>
             </div>
-            <div className="bg-white dark:bg-slate-900 p-8 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm h-[320px] min-w-0">
-              {chartsReady ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={WEEKLY_ACTIVITY}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                    <XAxis
-                      dataKey="day"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 12, fontWeight: 900, fill: "#94A3B8" }}
-                      dy={10}
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 12, fontWeight: 900, fill: "#94A3B8" }}
-                    />
-                    <Tooltip
-                      cursor={{ fill: "#F8FAFF" }}
-                      contentStyle={{ borderRadius: "12px", border: "none", fontWeight: 900, boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1)" }}
-                    />
-                    <Bar dataKey="hours" radius={[8, 8, 0, 0]} barSize={40}>
-                      {WEEKLY_ACTIVITY.map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={index === 3 ? "#4DA6FF" : "#CBD5E1"} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-full rounded-xl bg-slate-50 dark:bg-slate-800 animate-pulse" />
-              )}
-            </div>
+            <ExamReadinessBoard />
           </section>
         </div>
 
         <div className="space-y-8">
-          <section className="bg-slate-900 text-white p-8 rounded-xl space-y-8 relative overflow-hidden shadow-2xl">
+          <section className="bg-[#1c2638] text-white p-7 rounded-[20px] space-y-6 relative overflow-hidden shadow-lg">
             <div className="relative z-10">
-              <h3 className="text-xl font-bold uppercase tracking-widest text-primary mb-4 italic">Next Level Prep</h3>
-              <p className="text-slate-400 font-medium leading-relaxed">You&apos;ve mastered <span className="text-white font-black">65%</span> of your syllabus. Complete 2 more quizzes to unlock the <span className="text-primary font-black">Elite Student</span> badge.</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-blue-200 mb-3">
+                Today&apos;s one thing
+              </p>
+              {dueCount > 0 ? (
+                <p className="text-slate-300 font-medium leading-relaxed">
+                  <span className="text-white font-black">{dueCount} skill{dueCount === 1 ? "" : "s"}</span>{" "}
+                  are scheduled for review right now — timed so you revisit them just before
+                  you&apos;d forget. Twenty minutes here is worth more than two hours of
+                  rereading.
+                </p>
+              ) : (
+                <p className="text-slate-300 font-medium leading-relaxed">
+                  Nothing is due for review. Good place to be. Photograph a page of notes and
+                  StudyDesk will turn it into questions and schedule them for you.
+                </p>
+              )}
             </div>
-            <div className="relative z-10 p-6 bg-white/5 border border-white/10 rounded-base flex items-center gap-6 group hover:bg-white/10 transition-colors">
-              <div className="w-14 h-14 bg-primary text-white rounded-full flex items-center justify-center font-black text-xl shadow-lg ring-4 ring-primary/20 group-hover:scale-110 transition-transform">S</div>
-              <div>
-                <p className="font-black text-lg tracking-tight leading-tight mb-1">Scholar Tier</p>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">1,250 Points gained</p>
-              </div>
-            </div>
+
+            <Link
+              href={dueCount > 0 ? "/student/quiz" : "/student/notes"}
+              className="relative z-10 w-full py-4 bg-primary text-white rounded-base font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 hover:shadow-xl hover:shadow-primary/30 transition-all"
+            >
+              {dueCount > 0 ? "Start the review" : "Capture notes"}
+              <ArrowRight size={16} />
+            </Link>
+
             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-primary opacity-20 blur-[80px]" />
           </section>
 
-          <section className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-8 space-y-8 shadow-sm">
+          <section className="surface-card rounded-[20px] p-7 space-y-7">
             <div className="flex justify-between items-center">
-              <h3 className="text-xl font-black tracking-tight">Upcoming Sessions</h3>
+              <div><p className="eyebrow">Keep momentum</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Upcoming sessions</h3></div>
               <Link href="/student/planner" className="text-primary hover:bg-primary/10 p-1 rounded-full transition-colors"><Plus size={20} /></Link>
             </div>
             <div className="space-y-6">
@@ -304,7 +254,7 @@ export default function StudentDashboard() {
                 </div>
               ))}
             </div>
-            <Link href="/student/planner" className="block w-full py-4 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-base hover:bg-primary/10 hover:text-primary transition-all text-center">View All Planner</Link>
+            <Link href="/student/planner" className="block w-full py-4 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800 rounded-base hover:bg-primary/10 hover:text-primary transition-all text-center">Open calendar</Link>
           </section>
         </div>
       </div>

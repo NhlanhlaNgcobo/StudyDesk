@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Upload,
@@ -13,8 +14,11 @@ import {
   FileText,
   Image,
   Presentation,
+  Brain,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DEMO_MODULES } from "@/lib/mock-data";
 
 const MATERIAL_TYPES = [
   { id: "notes", label: "Notes", icon: FileText },
@@ -99,14 +103,30 @@ export default function TutorMaterialsPage() {
     <div className="space-y-10 animate-in fade-in duration-500">
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-4xl md:text-5xl font-black tracking-tight italic decoration-emerald-500 decoration-4 underline uppercase">
-            Study Materials
+          <p className="eyebrow">Course authoring</p>
+          <h1 className="mt-2 text-4xl md:text-5xl font-semibold tracking-[-0.04em]">
+            Module libraries
           </h1>
-          <p className="text-slate-500 font-bold mt-2">
-            Upload and share resources with your student groups
+          <p className="text-text-secondary font-medium mt-3 max-w-2xl">
+            Each module keeps its source material, tutor notes, quizzes, exams, and deadlines in one place. AI generation only uses the material you select.
           </p>
         </div>
       </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {DEMO_MODULES.map((module) => (
+          <Link key={module.id} href={`/tutor/materials/${module.id}`} className="surface-card group rounded-[20px] p-5 transition hover:-translate-y-0.5 hover:border-emerald-500/40 hover:shadow-lg">
+            <div className="flex items-start justify-between"><span className="rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white" style={{ backgroundColor: module.color }}>{module.tags[0]}</span><span className="text-xs font-bold text-text-secondary">{module.fileCount} files</span></div>
+            <h2 className="mt-5 text-lg font-semibold tracking-tight group-hover:text-emerald-700">{module.name}</h2>
+            <p className="mt-1 text-sm text-text-secondary">{module.subject}</p>
+            <div className="mt-5 flex gap-4 text-xs font-semibold text-text-secondary"><span className="inline-flex items-center gap-1"><Brain size={13} /> Build quiz</span><span className="inline-flex items-center gap-1"><Timer size={13} /> Timed exam</span></div>
+          </Link>
+        ))}
+      </section>
+
+      <div className="flex items-center gap-3 border-t border-app pt-8">
+        <div><p className="eyebrow">Quick upload</p><h2 className="mt-1 text-2xl font-semibold tracking-tight">Share a resource across groups</h2></div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-10">
         {/* Upload Form */}

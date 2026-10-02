@@ -20,7 +20,9 @@ import {
   User as UserIcon, 
   ChevronLeft,
   Sun,
-  Moon
+  Moon,
+  Users,
+  ShieldCheck
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "next-themes";
@@ -37,9 +39,10 @@ const NAV_ITEMS = [
   { icon: Brain, label: "Quiz", href: "/student/quiz" },
   { icon: Clock, label: "Exams", href: "/student/exams" },
   { icon: MessageSquare, label: "AI Tutor", href: "/student/ai-tutor" },
-  { icon: MessageSquare, label: "Groups", href: "/student/groups" },
-  { icon: Calendar, label: "Planner", href: "/student/planner" },
+  { icon: Users, label: "Groups", href: "/student/groups" },
+  { icon: Calendar, label: "Calendar", href: "/student/planner" },
   { icon: BarChart2, label: "Analytics", href: "/student/analytics" },
+  { icon: ShieldCheck, label: "Work log", href: "/student/integrity" },
   { icon: Settings, label: "Settings", href: "/student/settings" },
 ];
 
@@ -232,7 +235,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
         {/* Mobile Bottom Bar */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 h-20 bg-white dark:bg-slate-900 border-t flex items-center justify-around px-2 z-50 pb-safe">
-            {[NAV_ITEMS[0], NAV_ITEMS[1], NAV_ITEMS[2], NAV_ITEMS[3], NAV_ITEMS[8]].map((item) => {
+            {/* Smartphone-first: the bottom bar is the study loop, not the feature list. */}
+            {[NAV_ITEMS[0], NAV_ITEMS[2], NAV_ITEMS[3], NAV_ITEMS[5], NAV_ITEMS[8]].map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                     <Link 

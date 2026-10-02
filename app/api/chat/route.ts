@@ -1,6 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
-import { selectModel, buildSystemPrompt, ClaudeOptions, ChatMessage } from "@/lib/claude";
+import {
+  selectModel,
+  buildSystemPrompt,
+  modelLabel,
+  FALLBACK_MODEL,
+  ClaudeOptions,
+  ChatMessage,
+} from "@/lib/claude";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,39 +54,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const client = new Anthropic({ apiKey });
-    const preferredModel = selectModel(options || {});
-    const systemPrompt = buildSystemPrompt(options || {});
+    const resolvedOptions: ClaudeOptions = { mode: "learn", ...(options || {}) };
 
-    // Stream using the official SDK
+    const client = new Anthropic({ apiKey });
+    const preferredModel = selectModel(resolvedOptions);
+    const systemPrompt = buildSystemPrompt(resolvedOptions);
+
+    // In learn mode the tutor is meant to be short. Capping output is both a
+    // pedagogical lever and a data-cost lever for students on mobile data.
+    const maxTokens =
+      resolvedOptions.maxTokens ??
+      (resolvedOptions.lowData ? 512 : resolvedOptions.mode === "learn" ? 1024 : 2048);
+
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
       async start(controller) {
-        const streamWithModel = async (model: string) => {
-          const anthropicStream = await client.messages.stream({
+        const streamWithModel = (model: string) =>
+          client.messages.stream({
             model,
-            max_tokens: options?.maxTokens || 2048,
+            max_tokens: maxTokens,
             system: systemPrompt,
-            messages: messages.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
+            messages: messages.map((m) => ({ role: m.role, content: m.content })),
           });
-
-          return anthropicStream;
-        };
 
         try {
           let modelUsed = preferredModel;
           let anthropicStream;
 
           try {
-            anthropicStream = await streamWithModel(modelUsed);
+            anthropicStream = streamWithModel(modelUsed);
           } catch (error) {
-            if (modelUsed !== "claude-sonnet-4-20250514" && isModelUnavailable(error)) {
-              modelUsed = "claude-sonnet-4-20250514";
-              anthropicStream = await streamWithModel(modelUsed);
+            if (modelUsed !== FALLBACK_MODEL && isModelUnavailable(error)) {
+              modelUsed = FALLBACK_MODEL;
+              anthropicStream = streamWithModel(modelUsed);
             } else {
               throw error;
             }
@@ -97,10 +105,10 @@ export async function POST(req: NextRequest) {
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error("Stream error:", err);
           const errChunk = JSON.stringify({
-            error: err.message || "Stream failed",
+            error: err instanceof Error ? err.message : "Stream failed",
           });
           controller.enqueue(encoder.encode(`data: ${errChunk}\n\n`));
           controller.close();
@@ -114,12 +122,14 @@ export async function POST(req: NextRequest) {
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
         "X-Model-Used": preferredModel,
+        "X-Model-Label": modelLabel(resolvedOptions),
+        "X-Tutor-Mode": resolvedOptions.mode || "learn",
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Chat route error:", error);
     return NextResponse.json(
-      { message: error.message || "Internal server error" },
+      { message: error instanceof Error ? error.message : "Internal server error" },
       { status: 500 }
     );
   }

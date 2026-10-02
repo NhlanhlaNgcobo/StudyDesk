@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { FileText, Search, Tag } from "lucide-react";
+import { FileText, Search, Tag, Camera, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { DEMO_MODULES } from "@/lib/mock-data";
 import { useKnowledgeStore } from "@/lib/module-knowledge";
+import { NoteCapture } from "@/components/student/note-capture";
 
 export default function NotesPage() {
   const knowledge = useKnowledgeStore();
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<"All" | "typed" | "generated" | "imported_excerpt">("All");
+  const [capturing, setCapturing] = useState(false);
+  const [captureModuleId, setCaptureModuleId] = useState(DEMO_MODULES[0]?.id || "1");
+
+  const captureModule = DEMO_MODULES.find((item) => item.id === captureModuleId);
 
   const filteredNotes = useMemo(() => {
     return knowledge.notes.filter((note) => {
@@ -38,7 +43,42 @@ export default function NotesPage() {
             Review typed notes, generated note packs, and the stored source material used to build quizzes, exams, and flashcards.
           </p>
         </div>
+
+        <button
+          onClick={() => setCapturing((value) => !value)}
+          className="flex shrink-0 items-center justify-center gap-3 rounded-full bg-primary px-7 py-4 text-xs font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-primary/20 transition-all hover:-translate-y-0.5 active:scale-95"
+        >
+          {capturing ? <X size={18} /> : <Camera size={18} />}
+          {capturing ? "Close capture" : "Photograph notes"}
+        </button>
       </section>
+
+      {capturing && (
+        <section className="space-y-4">
+          <label className="block">
+            <span className="mb-2 block text-[11px] font-black uppercase tracking-[0.18em] text-text-secondary">
+              Which module are these notes for?
+            </span>
+            <select
+              value={captureModuleId}
+              onChange={(event) => setCaptureModuleId(event.target.value)}
+              className="w-full max-w-md rounded-full border-2 border-transparent bg-app-muted px-5 py-3.5 font-bold outline-none transition focus:border-primary"
+            >
+              {DEMO_MODULES.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <NoteCapture
+            moduleId={captureModuleId}
+            moduleName={captureModule?.name || ""}
+            onSaved={() => setCapturing(false)}
+          />
+        </section>
+      )}
 
       <section className="rounded-[28px] border border-app bg-app-surface p-4 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
@@ -75,7 +115,7 @@ export default function NotesPage() {
           <h2 className="text-2xl font-black">Study notes</h2>
           <div className="grid gap-6 md:grid-cols-2">
             {filteredNotes.map((note, index) => {
-              const module = DEMO_MODULES.find((item) => item.id === note.moduleId);
+              const noteModule = DEMO_MODULES.find((item) => item.id === note.moduleId);
               return (
                 <motion.article
                   key={note.id}
@@ -88,7 +128,7 @@ export default function NotesPage() {
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">
-                          {module?.tags[0] || note.moduleId}
+                          {noteModule?.tags[0] || note.moduleId}
                         </p>
                         <h2 className="mt-2 text-2xl font-black leading-tight">{note.title}</h2>
                       </div>
@@ -99,7 +139,7 @@ export default function NotesPage() {
 
                     <p className="text-sm font-medium leading-7 text-text-secondary">{note.preview}</p>
 
-                    <div className="flex items-center justify-between rounded-[20px] bg-app-muted px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-[20px] bg-app-muted px-4 py-3">
                       <div className="flex items-center gap-2 text-text-secondary">
                         <FileText size={16} className="text-primary" />
                         <span className="text-xs font-black uppercase tracking-[0.16em]">
@@ -108,7 +148,7 @@ export default function NotesPage() {
                       </div>
                       <Link
                         href={`/student/modules/${note.moduleId}`}
-                        className="text-xs font-black uppercase tracking-[0.18em] text-primary"
+                        className="shrink-0 text-xs font-black uppercase tracking-[0.18em] text-primary"
                       >
                         Open module
                       </Link>

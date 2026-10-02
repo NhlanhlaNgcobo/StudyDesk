@@ -101,6 +101,18 @@ export interface FlashcardDeck {
   createdAt: string;
 }
 
+/**
+ * One rubric line, marked on its own. SA university long-answer questions are
+ * marked against a memo criterion by criterion, and a single total hides which
+ * criterion lost the marks - which is exactly the thing a student needs.
+ */
+export interface CriterionMark {
+  criterion: string;
+  awarded: number;
+  max: number;
+  comment: string;
+}
+
 export interface AssessmentQuestionResult {
   questionId: string;
   score: number;
@@ -111,6 +123,12 @@ export interface AssessmentQuestionResult {
   correction: string;
   explanation: string;
   topic: string;
+  /** Per-rubric-line breakdown, for anything that is not multiple choice. */
+  criteria?: CriterionMark[];
+  /** The single most valuable next action on this question. */
+  nextStep?: string;
+  /** Short label for the specific error, used by the learner model. */
+  misconception?: string;
 }
 
 export interface AssessmentAttempt {

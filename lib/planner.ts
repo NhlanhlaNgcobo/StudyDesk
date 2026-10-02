@@ -1,6 +1,6 @@
 import { DEMO_PLANNER_EVENTS } from "@/lib/mock-data";
 
-export type PlannerEventType = "exam" | "group" | "study" | "deadline";
+export type PlannerEventType = "exam" | "group" | "study" | "deadline" | "personal";
 
 export interface PlannerEvent {
   id: string;
@@ -149,4 +149,32 @@ export function createGoogleCalendarUrl(event: PlannerEvent) {
   }
 
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+function escapeIcs(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+
+export function createIcsCalendar(event: PlannerEvent) {
+  const end = new Date(getEventDateTime(event).getTime() + event.duration * 60_000);
+  const start = toGoogleCalendarDate(event.date, event.time);
+  const endValue = toGoogleCalendarDate(
+    `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}-${String(end.getDate()).padStart(2, "0")}`,
+    `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`
+  );
+  const description = [event.notes, event.module ? `StudyDesk category: ${event.module}` : ""].filter(Boolean).join("\\n\\n");
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//StudyDesk//Academic Calendar//EN",
+    "BEGIN:VEVENT",
+    `UID:${event.id}@studydesk`,
+    `DTSTAMP:${start}`,
+    `DTSTART:${start}`,
+    `DTEND:${endValue}`,
+    `SUMMARY:${escapeIcs(event.title)}`,
+    `DESCRIPTION:${escapeIcs(description)}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
 }

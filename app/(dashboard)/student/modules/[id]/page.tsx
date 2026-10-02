@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { type ReactNode, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
   Brain,
+  CalendarDays,
   FileText,
   Files,
   Loader2,
@@ -41,7 +42,10 @@ const QUESTION_TYPE_OPTIONS = [
 export default function ModuleDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const workspace = pathname.startsWith("/tutor") ? "tutor" : "student";
   const moduleId = String(params.id);
+  const moduleIndexHref = workspace === "tutor" ? "/tutor/materials" : "/student/modules";
   useKnowledgeStore();
 
   const { module, sources, notes, assessments, flashcards } = getModuleKnowledge(moduleId);
@@ -196,7 +200,7 @@ export default function ModuleDetailPage() {
             payload.content,
             selectedSourceIds
           );
-          router.push("/student/notes");
+          router.push(workspace === "tutor" ? "/tutor/materials" : "/student/notes");
         } else {
           addFlashcardDeck(
             moduleId,
@@ -250,11 +254,7 @@ export default function ModuleDetailPage() {
           createdAt: new Date().toISOString(),
         });
 
-        router.push(
-          assessmentMode === "exam"
-            ? `/student/exams/${assessment.id}`
-            : `/student/quiz/${assessment.id}`
-        );
+        router.push(workspace === "tutor" ? "/tutor/materials" : assessmentMode === "exam" ? `/student/exams/${assessment.id}` : `/student/quiz/${assessment.id}`);
       }
 
       setShowGenerate(null);
@@ -271,7 +271,7 @@ export default function ModuleDetailPage() {
   return (
     <div className="space-y-10">
       <div className="flex flex-wrap items-center gap-3 text-xs font-black uppercase tracking-[0.18em] text-text-secondary">
-        <Link href="/student/modules" className="inline-flex items-center gap-2 text-primary">
+        <Link href={moduleIndexHref} className="inline-flex items-center gap-2 text-primary">
           <ArrowLeft size={14} />
           Back to modules
         </Link>
@@ -339,6 +339,12 @@ export default function ModuleDetailPage() {
                 <BookOpen size={16} />
                 Generate flashcards
               </button>
+              {workspace === "tutor" && (
+                <Link href={`/tutor/calendar?new=1&type=deadline&module=${encodeURIComponent(module.tags[0])}`} className="inline-flex items-center gap-3 rounded-full border border-emerald-200 bg-emerald-50 px-5 py-3 text-xs font-black uppercase tracking-[0.18em] text-emerald-700">
+                  <CalendarDays size={16} />
+                  Set deadline
+                </Link>
+              )}
             </div>
           </div>
 
@@ -430,7 +436,7 @@ export default function ModuleDetailPage() {
           <div className="rounded-[28px] border border-app bg-app-surface p-6 shadow-sm">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-xl font-black">Module notes</h2>
-              <Link href="/student/notes" className="text-xs font-black uppercase tracking-[0.18em] text-primary">
+              <Link href={workspace === "tutor" ? "/tutor/materials" : "/student/notes"} className="text-xs font-black uppercase tracking-[0.18em] text-primary">
                 View notes
               </Link>
             </div>
@@ -449,10 +455,10 @@ export default function ModuleDetailPage() {
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-xl font-black">Assessment library</h2>
               <div className="flex gap-2">
-                <Link href="/student/quiz" className="text-xs font-black uppercase tracking-[0.18em] text-primary">
+                <Link href={workspace === "tutor" ? "/tutor/materials" : "/student/quiz"} className="text-xs font-black uppercase tracking-[0.18em] text-primary">
                   Quizzes
                 </Link>
-                <Link href="/student/exams" className="text-xs font-black uppercase tracking-[0.18em] text-primary">
+                <Link href={workspace === "tutor" ? "/tutor/materials" : "/student/exams"} className="text-xs font-black uppercase tracking-[0.18em] text-primary">
                   Exams
                 </Link>
               </div>
@@ -461,11 +467,7 @@ export default function ModuleDetailPage() {
               {assessments.slice(0, 4).map((assessment) => (
                 <Link
                   key={assessment.id}
-                  href={
-                    assessment.mode === "exam"
-                      ? `/student/exams/${assessment.id}`
-                      : `/student/quiz/${assessment.id}`
-                  }
+                  href={workspace === "tutor" ? "/tutor/materials" : assessment.mode === "exam" ? `/student/exams/${assessment.id}` : `/student/quiz/${assessment.id}`}
                   className="block rounded-[20px] bg-app-muted p-4"
                 >
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">

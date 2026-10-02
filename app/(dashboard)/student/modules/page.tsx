@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { ArrowRight, BookOpen, Calendar, FileText, PlusCircle, Search } from "lucide-react";
+import { ArrowRight, BookOpen, Brain, Calendar, FileText, PlusCircle, Search, Sparkles, Timer } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { DEMO_MODULES } from "@/lib/mock-data";
@@ -88,6 +88,20 @@ export default function ModulesPage() {
               </button>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="surface-card rounded-[24px] p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="eyebrow">Make your own study tools</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight">Build from your module material.</h2>
+            <p className="mt-2 max-w-2xl text-sm font-medium text-text-secondary">Upload readings or slides, write your own notes, then generate flashcards, a practice quiz, or a timed mock exam from the sources you choose.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-text-secondary"><span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-3 py-2 text-violet-700"><Sparkles size={14} /> Flashcards</span><span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-2 text-blue-700"><Brain size={14} /> Quizzes</span><span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-2 text-emerald-700"><Timer size={14} /> Timed exams</span></div>
+        </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {DEMO_MODULES.map((module) => <Link key={module.id} href={`/student/modules/${module.id}`} className="rounded-full border border-app bg-app-muted px-4 py-2 text-xs font-bold text-app transition hover:border-primary/30 hover:bg-app-surface hover:text-primary">Create for {module.tags[0]}</Link>)}
         </div>
       </section>
 

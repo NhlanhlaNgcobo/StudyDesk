@@ -30,6 +30,7 @@ import {
   saveAssessmentAttempt,
   useKnowledgeStore,
 } from "@/lib/module-knowledge";
+import { recordAttempt, recordConfidence } from "@/lib/learner-model";
 
 interface AssessmentRunnerProps {
   assessmentId: string;
@@ -37,6 +38,20 @@ interface AssessmentRunnerProps {
 }
 
 type AnswerValue = string | number;
+
+/**
+ * Confidence is captured BEFORE the mark is revealed, so the gap between
+ * predicted and actual is measurable. That gap is the fluency illusion in
+ * data: how smooth studying felt does not predict what survives, and a
+ * student who is systematically overconfident is the one who walks into an
+ * exam unprepared and surprised.
+ */
+const CONFIDENCE_STEPS = [
+  { value: 0.95, label: "Certain" },
+  { value: 0.7, label: "Fairly sure" },
+  { value: 0.4, label: "Unsure" },
+  { value: 0.15, label: "Guessing" },
+] as const;
 
 function formatTime(seconds: number) {
   const safe = Math.max(0, seconds);
@@ -119,6 +134,7 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [flagged, setFlagged] = useState<Record<string, boolean>>({});
+  const [confidence, setConfidence] = useState<Record<string, number>>({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [startedAt, setStartedAt] = useState(() => new Date().toISOString());
   const [submitting, setSubmitting] = useState(false);
@@ -137,6 +153,7 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
     setCurrentIndex(0);
     setAnswers({});
     setFlagged({});
+    setConfidence({});
     setTimeLeft((assessment.timeLimitMinutes || 20) * 60);
     setStartedAt(new Date().toISOString());
     setSubmitError(null);
@@ -239,6 +256,35 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
       };
 
       saveAssessmentAttempt(attempt);
+
+      // Fold every marked question into the learner model. This is what makes
+      // the record cumulative: mastery, item difficulty, misconceptions and
+      // the next review date all move off these results.
+      attempt.results.forEach((result) => {
+        const fraction = result.maxScore > 0 ? result.score / result.maxScore : 0;
+        const missedTheMark = fraction < 1;
+
+        recordAttempt({
+          moduleId: activeAssessment.moduleId,
+          topic: result.topic || "General",
+          score: fraction,
+          // Prefer the marker's short label over the long correction text.
+          misconception: missedTheMark
+            ? result.misconception || result.correction?.slice(0, 120) || null
+            : null,
+        });
+
+        const predicted = confidence[result.questionId];
+        if (typeof predicted === "number") {
+          recordConfidence(
+            activeAssessment.moduleId,
+            result.topic || "General",
+            predicted,
+            fraction
+          );
+        }
+      });
+
       setResultState({
         percentage: attempt.percentage,
         totalScore: attempt.totalScore,
@@ -312,6 +358,41 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
             {question.rubricCriteria?.join(" • ") ||
               "Explain the concept clearly, stay accurate, and use evidence from the module materials."}
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  function renderConfidence(question: AssessmentQuestion) {
+    const selected = confidence[question.id];
+
+    return (
+      <div className="mt-6 rounded-[22px] border border-app bg-app-muted/60 p-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">
+          Before you move on — how sure are you?
+        </p>
+        <p className="mt-1 text-xs font-medium text-text-secondary">
+          Recorded before marking, so we can show you the gap between what you expect and
+          what you score.
+        </p>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {CONFIDENCE_STEPS.map((step) => (
+            <button
+              key={step.label}
+              type="button"
+              onClick={() =>
+                setConfidence((previous) => ({ ...previous, [question.id]: step.value }))
+              }
+              className={cn(
+                "rounded-full border px-3 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] transition",
+                selected === step.value
+                  ? "border-primary bg-primary text-white"
+                  : "border-app bg-app-surface text-text-secondary hover:border-primary/40"
+              )}
+            >
+              {step.label}
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -430,6 +511,62 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
                       </div>
                     </div>
 
+                    {result?.criteria && result.criteria.length > 0 && (
+                      <div className="mt-4 overflow-hidden rounded-[20px] border border-app bg-app-surface">
+                        <p className="border-b border-app px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-primary">
+                          Mark breakdown — where the marks went
+                        </p>
+                        <ul className="divide-y divide-app">
+                          {result.criteria.map((criterion, criterionIndex) => {
+                            const full = criterion.awarded >= criterion.max;
+                            return (
+                              <li
+                                key={`${question.id}-c${criterionIndex}`}
+                                className="flex items-start justify-between gap-4 px-4 py-3"
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-bold leading-6 text-text-primary">
+                                    {criterion.criterion}
+                                  </p>
+                                  {criterion.comment && (
+                                    <p className="mt-1 text-sm font-medium leading-6 text-text-secondary">
+                                      {criterion.comment}
+                                    </p>
+                                  )}
+                                </div>
+                                <span
+                                  className={cn(
+                                    "shrink-0 rounded-full px-3 py-1 text-xs font-black tabular-nums",
+                                    full
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : criterion.awarded === 0
+                                        ? "bg-red-50 text-red-700"
+                                        : "bg-amber-50 text-amber-700"
+                                  )}
+                                >
+                                  {criterion.awarded}/{criterion.max}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+
+                    {result?.nextStep && (
+                      <div className="mt-4 flex items-start gap-3 rounded-[20px] border border-primary/20 bg-primary/5 p-4">
+                        <ArrowRight size={18} className="mt-0.5 shrink-0 text-primary" />
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">
+                            Do this next
+                          </p>
+                          <p className="mt-1 font-semibold leading-6 text-text-primary">
+                            {result.nextStep}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="mt-4 rounded-[20px] border border-app bg-app-surface p-4">
                       <p className="text-[10px] font-black uppercase tracking-[0.18em] text-primary">
                         Feedback
@@ -450,6 +587,57 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
           </div>
 
           <div className="space-y-6">
+            {(() => {
+              const rated = resultState.results.filter(
+                (item) => typeof confidence[item.questionId] === "number"
+              );
+              if (rated.length === 0) return null;
+
+              const gap =
+                rated.reduce((sum, item) => {
+                  const actual = item.maxScore > 0 ? item.score / item.maxScore : 0;
+                  return sum + (confidence[item.questionId] - actual);
+                }, 0) / rated.length;
+
+              const points = Math.round(gap * 100);
+              const overconfident = points > 15;
+              const underconfident = points < -15;
+
+              return (
+                <section
+                  className={cn(
+                    "rounded-[32px] border p-6 shadow-sm",
+                    overconfident
+                      ? "border-red-200 bg-red-50"
+                      : underconfident
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-emerald-200 bg-emerald-50"
+                  )}
+                >
+                  <p className="text-[11px] font-black uppercase tracking-[0.22em] text-text-secondary">
+                    Confidence vs reality
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black tracking-tight">
+                    {overconfident
+                      ? `You were ${points} points overconfident`
+                      : underconfident
+                        ? `You scored ${Math.abs(points)} points better than you expected`
+                        : "Well calibrated"}
+                  </h2>
+                  <p className="mt-3 text-sm font-semibold leading-6 text-text-secondary">
+                    {overconfident
+                      ? "This is the single most useful warning this platform can give you. Feeling sure is not the same as knowing, and the gap only shows up in an exam unless you measure it here."
+                      : underconfident
+                        ? "You know more than you think. Under-confidence costs marks too — it makes you second-guess correct answers."
+                        : "Your sense of what you know matches your results. That judgement is worth as much as the content."}
+                  </p>
+                  <p className="mt-3 text-[11px] font-black uppercase tracking-[0.18em] text-text-secondary">
+                    Across {rated.length} rated question{rated.length === 1 ? "" : "s"}
+                  </p>
+                </section>
+              );
+            })()}
+
             <section className="rounded-[32px] border border-app bg-app-surface p-6 shadow-sm">
               <p className="text-[11px] font-black uppercase tracking-[0.22em] text-primary">
                 Readiness signal
@@ -607,6 +795,8 @@ export function AssessmentRunner({ assessmentId, mode }: AssessmentRunnerProps) 
           </div>
 
           <div className="mt-6">{renderInput(currentQuestion)}</div>
+
+          {renderConfidence(currentQuestion)}
 
           {submitError ? (
             <div className="mt-5 rounded-[20px] bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
